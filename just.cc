@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/epoll.h>
+#include <sys/stat.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/timerfd.h>
@@ -53,6 +54,40 @@ ssize_t process_memory_usage() {
   return val * getpagesize();
 err:
   return 0;
+}
+
+static FILE* FOpen(const char* path, const char* mode) {
+  FILE* file = fopen(path, mode);
+  if (file == nullptr) return nullptr;
+  struct stat file_stat;
+  if (fstat(fileno(file), &file_stat) != 0) return nullptr;
+  bool is_regular_file = ((file_stat.st_mode & S_IFREG) != 0);
+  if (is_regular_file) return file;
+  fclose(file);
+  return nullptr;
+}
+
+static char* ReadChars(const char* name, int* size_out) {
+  FILE* file = FOpen(name, "rb");
+  if (file == nullptr) return nullptr;
+
+  fseek(file, 0, SEEK_END);
+  size_t size = ftell(file);
+  rewind(file);
+
+  char* chars = new char[size + 1];
+  chars[size] = '\0';
+  for (size_t i = 0; i < size;) {
+    i += fread(&chars[i], 1, size - i, file);
+    if (ferror(file)) {
+      fclose(file);
+      delete[] chars;
+      return nullptr;
+    }
+  }
+  fclose(file);
+  *size_out = static_cast<int>(size);
+  return chars;
 }
 
 namespace just {
@@ -923,9 +958,13 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     justInstance->Set(context, String::NewFromUtf8(isolate, "args", 
       NewStringType::kNormal).ToLocalChecked(), arguments);
 
+    char* scriptName = "just.js";
+    if (argc > 1) {
+      scriptName = argv[1];
+    }
     TryCatch try_catch(isolate);
     ScriptOrigin baseorigin(
-      String::NewFromUtf8(isolate, "just.js", 
+      String::NewFromUtf8(isolate, scriptName, 
         NewStringType::kNormal).ToLocalChecked(), // resource name
       Integer::New(isolate, 0), // line offset
       Integer::New(isolate, 0),  // column offset
@@ -938,8 +977,15 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     );
     Local<Module> module;
     Local<String> base;
-    base = String::NewFromUtf8(isolate, just_js, NewStringType::kNormal, 
-      just_js_len).ToLocalChecked();
+    if (argc > 1) {
+      int size = 0;
+      char* js_source = ReadChars(argv[1], &size);
+      base = String::NewFromUtf8(isolate, js_source, NewStringType::kNormal, 
+        size).ToLocalChecked();
+    } else {
+      base = String::NewFromUtf8(isolate, just_js, NewStringType::kNormal, 
+        just_js_len).ToLocalChecked();
+    }
     ScriptCompiler::Source basescript(base, baseorigin);
     if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
       PrintStackTrace(isolate, try_catch);

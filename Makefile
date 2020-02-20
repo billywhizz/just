@@ -1,4 +1,4 @@
-CC             = ccache g++
+CC             = clang++
 CCFLAGS        = -I./deps/v8/include -O3 -Wall -Wextra -flto -Wno-unused-parameter
 LDADD          = -s -static -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a just.o -Wl,--end-group
 CCFLAGSDBG     = -I./deps/v8/include -g -Wall -Wextra -flto -Wno-unused-parameter
