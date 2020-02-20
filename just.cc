@@ -103,24 +103,7 @@ using v8::BigUint64Array;
 using v8::Int32Array;
 using v8::Exception;
 
-enum handleType {
-  NONE,
-  SOCKET,
-  TIMER,
-  SIGNAL
-};
-
-typedef struct handle handle;
-
-struct handle {
-  int fd;
-  handleType type;
-  struct iovec* in;
-  struct iovec* out;
-  void* data;
-};
-
-std::unordered_map<std::string, struct handle*> handles;
+//std::unordered_map<std::string, struct handle*> handles;
 
 MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
   FILE *file = fopen(name, "rb");
@@ -531,6 +514,83 @@ void Signal(const FunctionCallbackInfo<Value> &args) {
 
 }
 
+namespace handles {
+
+enum handleType {
+  NONE,
+  SOCKET,
+  TIMER,
+  SIGNAL
+};
+
+typedef struct handle handle;
+
+struct handle {
+  int fd;
+  handleType type;
+  struct iovec* in;
+  struct iovec* out;
+  void* data;
+};
+
+void CreateHandle(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  just::handles::handle* h = (just::handles::handle*)calloc(1, sizeof(just::handles::handle));
+  h->fd = args[0]->Int32Value(context).ToChecked();
+  int argc = args.Length();
+  if (argc > 1) {
+    Local<ArrayBuffer> in = args[1].As<ArrayBuffer>();
+    h->in = (struct iovec*)in->GetAlignedPointerFromInternalField(0);
+  }
+  if (argc > 2) {
+    Local<ArrayBuffer> out = args[2].As<ArrayBuffer>();
+    h->out = (struct iovec*)out->GetAlignedPointerFromInternalField(0);
+  }
+  h->type = just::handles::handleType::NONE;
+  if (argc > 3) {
+    h->type = static_cast<just::handles::handleType>(args[3]->Int32Value(context).ToChecked());
+  }
+  Local<ArrayBuffer> handle = ArrayBuffer::New(isolate, NULL, 0, 
+    ArrayBufferCreationMode::kExternalized);
+  handle->SetAlignedPointerInInternalField(0, h);
+  handle->Set(context, String::NewFromUtf8(isolate, "fd", 
+    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->fd));
+  args.GetReturnValue().Set(handle);
+}
+
+void DestroyHandle(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> obj;
+  bool ok = args[0]->ToObject(context).ToLocal(&obj);
+  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
+  if (h->type == just::handles::handleType::SOCKET) {
+    free(h->in);
+    free(h->out);
+  }
+  just::handles::handle* h = (just::handles::handle*)calloc(1, sizeof(just::handles::handle));
+  h->fd = args[0]->Int32Value(context).ToChecked();
+  int argc = args.Length();
+  if (argc > 1) {
+    Local<ArrayBuffer> in = args[1].As<ArrayBuffer>();
+    h->in = (struct iovec*)in->GetAlignedPointerFromInternalField(0);
+  }
+  if (argc > 2) {
+    Local<ArrayBuffer> out = args[2].As<ArrayBuffer>();
+    h->out = (struct iovec*)out->GetAlignedPointerFromInternalField(0);
+  }
+  Local<ArrayBuffer> handle = ArrayBuffer::New(isolate, NULL, 0, 
+    ArrayBufferCreationMode::kExternalized);
+  handle->SetAlignedPointerInInternalField(0, h);
+  handle->Set(context, String::NewFromUtf8(isolate, "fd", 
+    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->fd));
+  args.GetReturnValue().Set(handle);
+}
+
+}
 namespace net {
 
 void Socket(const FunctionCallbackInfo<Value> &args) {
@@ -582,29 +642,6 @@ void Bind(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, 0));
 }
 
-void Handle(const FunctionCallbackInfo<Value> &args) {
-  Isolate *isolate = args.GetIsolate();
-  HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
-  just::handle* h = (just::handle*)calloc(1, sizeof(just::handle));
-  h->fd = args[0]->Int32Value(context).ToChecked();
-  int argc = args.Length();
-  if (argc > 1) {
-    Local<ArrayBuffer> in = args[1].As<ArrayBuffer>();
-    h->in = (struct iovec*)in->GetAlignedPointerFromInternalField(0);
-  }
-  if (argc > 2) {
-    Local<ArrayBuffer> out = args[2].As<ArrayBuffer>();
-    h->out = (struct iovec*)out->GetAlignedPointerFromInternalField(0);
-  }
-  Local<ArrayBuffer> handle = ArrayBuffer::New(isolate, NULL, 0, 
-    ArrayBufferCreationMode::kExternalized);
-  handle->SetAlignedPointerInInternalField(0, h);
-  handle->Set(context, String::NewFromUtf8(isolate, "fd", 
-    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->fd));
-  args.GetReturnValue().Set(handle);
-}
-
 void Accept(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -619,7 +656,7 @@ void Read(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> obj;
   bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handle* h = (just::handle*)obj->GetAlignedPointerFromInternalField(0);
+  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
   int r = read(h->fd, h->in->iov_base, h->in->iov_len);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
@@ -634,7 +671,7 @@ void Recv(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> obj;
   bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handle* h = (just::handle*)obj->GetAlignedPointerFromInternalField(0);
+  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
   int r = recv(h->fd, h->in->iov_base, h->in->iov_len, 0);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
@@ -671,7 +708,7 @@ void Send(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> obj;
   bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handle* h = (just::handle*)obj->GetAlignedPointerFromInternalField(0);
+  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
   int len = 0;
   if (args.Length() > 1) {
     len = args[1]->Int32Value(context).ToChecked();
@@ -688,7 +725,7 @@ void Close(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> obj;
   bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handle* h = (just::handle*)obj->GetAlignedPointerFromInternalField(0);
+  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
   args.GetReturnValue().Set(Integer::New(isolate, close(h->fd)));
 }
 
@@ -828,6 +865,29 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     just->Set(String::NewFromUtf8(isolate, "sys", 
       NewStringType::kNormal).ToLocalChecked(), sys);
 
+    Local<ObjectTemplate> handle = ObjectTemplate::New(isolate);
+    handle->Set(String::NewFromUtf8(isolate, "create", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::handles::CreateHandle));
+    handle->Set(String::NewFromUtf8(isolate, "destroy", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::handles::DestroyHandle));
+    handle->Set(String::NewFromUtf8(isolate, "NONE", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, just::handles::handleType::NONE));
+    handle->Set(String::NewFromUtf8(isolate, "SOCKET", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, just::handles::handleType::SOCKET));
+    handle->Set(String::NewFromUtf8(isolate, "TIMER", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, just::handles::handleType::TIMER));
+    handle->Set(String::NewFromUtf8(isolate, "SIGNAL", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, just::handles::handleType::SIGNAL));
+    just->Set(String::NewFromUtf8(isolate, "handle",
+      NewStringType::kNormal).ToLocalChecked(), 
+      handle);
+
     Local<ObjectTemplate> net = ObjectTemplate::New(isolate);
     net->Set(String::NewFromUtf8(isolate, "socket", 
       NewStringType::kNormal).ToLocalChecked(),
@@ -844,9 +904,6 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     net->Set(String::NewFromUtf8(isolate, "accept", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::net::Accept));
-    net->Set(String::NewFromUtf8(isolate, "handle", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Handle));
     net->Set(String::NewFromUtf8(isolate, "read", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::net::Read));
@@ -955,7 +1012,7 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     justInstance->Set(context, String::NewFromUtf8(isolate, "args", 
       NewStringType::kNormal).ToLocalChecked(), arguments);
 
-    char* scriptName = "just.js";
+    const char* scriptName = "just.js";
     if (argc > 1) {
       scriptName = argv[1];
     }

@@ -1,4 +1,4 @@
-const { sys, net, loop } = just
+const { sys, net, loop, handle } = just
 const { F_SETFL, F_GETFL } = sys
 const {
   AF_INET,
@@ -31,7 +31,7 @@ function onEvent (index) {
     return
   }
   if (fd === sockfd) {
-    const client = net.handle(net.accept(sockfd), rbuf, wbuf)
+    const client = handle.create(net.accept(sockfd), rbuf, wbuf)
     let flags = sys.fcntl(client.fd, F_GETFL, 0)
     flags |= O_NONBLOCK
     sys.fcntl(client.fd, F_SETFL, flags)
@@ -85,9 +85,9 @@ const loopfd = loop.create(EPOLL_CLOEXEC, 1024, evbuf)
 const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
 const timerfd = sys.timer(1000, 1000)
 
-timers[timerfd] = net.handle(timerfd, tbuf)
-sockets[sockfd] = net.handle(sockfd)
-loops[loopfd] = net.handle(loopfd)
+timers[timerfd] = handle.create(timerfd, tbuf)
+sockets[sockfd] = handle.create(sockfd)
+loops[loopfd] = handle.create(loopfd)
 
 r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
 r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
