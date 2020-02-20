@@ -520,7 +520,8 @@ enum handleType {
   NONE,
   SOCKET,
   TIMER,
-  SIGNAL
+  SIGNAL,
+  LOOP
 };
 
 typedef struct handle handle;
@@ -533,28 +534,39 @@ struct handle {
   void* data;
 };
 
+std::unordered_map<int, just::handles::handle*> handleMap;
+
 void CreateHandle(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   just::handles::handle* h = (just::handles::handle*)calloc(1, sizeof(just::handles::handle));
   h->fd = args[0]->Int32Value(context).ToChecked();
+  h->type = just::handles::handleType::NONE;
+  h->in = NULL;
+  h->out = NULL;
+  h->data = NULL;
   int argc = args.Length();
   if (argc > 1) {
-    Local<ArrayBuffer> in = args[1].As<ArrayBuffer>();
+    h->type = static_cast<just::handles::handleType>(args[1]->Int32Value(context).ToChecked());
+  }
+  int size = 1;
+  if (argc > 2) {
+    size = args[2]->Int32Value(context).ToChecked();
+  }
+  if (argc > 3) {
+    Local<ArrayBuffer> in = args[3].As<ArrayBuffer>();
     h->in = (struct iovec*)in->GetAlignedPointerFromInternalField(0);
   }
-  if (argc > 2) {
-    Local<ArrayBuffer> out = args[2].As<ArrayBuffer>();
+  if (argc > 4) {
+    Local<ArrayBuffer> out = args[4].As<ArrayBuffer>();
     h->out = (struct iovec*)out->GetAlignedPointerFromInternalField(0);
   }
-  h->type = just::handles::handleType::NONE;
-  if (argc > 3) {
-    h->type = static_cast<just::handles::handleType>(args[3]->Int32Value(context).ToChecked());
-  }
-  Local<ArrayBuffer> handle = ArrayBuffer::New(isolate, NULL, 0, 
-    ArrayBufferCreationMode::kExternalized);
-  handle->SetAlignedPointerInInternalField(0, h);
+  h->data = calloc(size, sizeof(struct epoll_event));
+  handleMap.insert(std::pair<int, just::handles::handle*>(h->fd, h));
+  Local<Object> handle = Object::New(isolate);
+  handle->Set(context, String::NewFromUtf8(isolate, "type", 
+    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->type));
   handle->Set(context, String::NewFromUtf8(isolate, "fd", 
     NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->fd));
   args.GetReturnValue().Set(handle);
@@ -564,30 +576,24 @@ void DestroyHandle(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  Local<Object> obj;
-  bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
+  int fd = args[0]->Int32Value(context).ToChecked();
+  if (handles::handleMap.count(fd) == 0) return;
+  just::handles::handle* h = handles::handleMap.at(fd);
+  struct epoll_event* event = (struct epoll_event*)h->data;
+  free(event);
+  //if (h->in != NULL) free(h->in);
+  //if (h->out != NULL) free(h->out);
   if (h->type == just::handles::handleType::SOCKET) {
-    free(h->in);
-    free(h->out);
+
   }
-  just::handles::handle* h = (just::handles::handle*)calloc(1, sizeof(just::handles::handle));
-  h->fd = args[0]->Int32Value(context).ToChecked();
-  int argc = args.Length();
-  if (argc > 1) {
-    Local<ArrayBuffer> in = args[1].As<ArrayBuffer>();
-    h->in = (struct iovec*)in->GetAlignedPointerFromInternalField(0);
+  if (h->type == just::handles::handleType::TIMER) {
+
   }
-  if (argc > 2) {
-    Local<ArrayBuffer> out = args[2].As<ArrayBuffer>();
-    h->out = (struct iovec*)out->GetAlignedPointerFromInternalField(0);
+  if (h->type == just::handles::handleType::LOOP) {
+
   }
-  Local<ArrayBuffer> handle = ArrayBuffer::New(isolate, NULL, 0, 
-    ArrayBufferCreationMode::kExternalized);
-  handle->SetAlignedPointerInInternalField(0, h);
-  handle->Set(context, String::NewFromUtf8(isolate, "fd", 
-    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->fd));
-  args.GetReturnValue().Set(handle);
+  free(h);
+  handles::handleMap.erase(fd);
 }
 
 }
@@ -654,9 +660,9 @@ void Read(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  Local<Object> obj;
-  bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
+  int fd = args[0]->Int32Value(context).ToChecked();
+  if (handles::handleMap.count(fd) == 0) return;
+  just::handles::handle* h = handles::handleMap.at(fd);
   int r = read(h->fd, h->in->iov_base, h->in->iov_len);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
@@ -669,9 +675,9 @@ void Recv(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  Local<Object> obj;
-  bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
+  int fd = args[0]->Int32Value(context).ToChecked();
+  if (handles::handleMap.count(fd) == 0) return;
+  just::handles::handle* h = handles::handleMap.at(fd);
   int r = recv(h->fd, h->in->iov_base, h->in->iov_len, 0);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
@@ -707,8 +713,9 @@ void Send(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> obj;
-  bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
+  int fd = args[0]->Int32Value(context).ToChecked();
+  if (handles::handleMap.count(fd) == 0) return;
+  just::handles::handle* h = handles::handleMap.at(fd);
   int len = 0;
   if (args.Length() > 1) {
     len = args[1]->Int32Value(context).ToChecked();
@@ -723,10 +730,8 @@ void Close(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  Local<Object> obj;
-  bool ok = args[0]->ToObject(context).ToLocal(&obj);
-  just::handles::handle* h = (just::handles::handle*)obj->GetAlignedPointerFromInternalField(0);
-  args.GetReturnValue().Set(Integer::New(isolate, close(h->fd)));
+  int fd = args[0]->Int32Value(context).ToChecked();
+  args.GetReturnValue().Set(Integer::New(isolate, close(fd)));
 }
 
 }
@@ -742,11 +747,13 @@ void EpollCtl(const FunctionCallbackInfo<Value> &args) {
   int fd = args[2]->Int32Value(context).ToChecked();
   struct epoll_event* e = NULL;
   if (args.Length() > 3) {
+    if (handles::handleMap.count(fd) == 0) return;
+    just::handles::handle* h = handles::handleMap.at(fd);
+    e = (struct epoll_event*)h->data;
     // todo: figure out how to retain a refenece to this epoll_event and 
     // free it when we close the descriptor
-    int event = args[3]->Int32Value(context).ToChecked();
-    e = (struct epoll_event *)calloc(1, sizeof(struct epoll_event));
-    e->events = event;
+    int mask = args[3]->Int32Value(context).ToChecked();
+    e->events = mask;
     e->data.fd = fd;
   }
   args.GetReturnValue().Set(Integer::New(isolate, epoll_ctl(loopfd, 
@@ -758,11 +765,6 @@ void EpollCreate(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   int flags = args[0]->Int32Value(context).ToChecked();
-  int size = args[1]->Int32Value(context).ToChecked();
-  Local<ArrayBuffer> ab = args[2].As<ArrayBuffer>();
-  struct epoll_event* events = (struct epoll_event*)calloc(size, 
-    sizeof(struct epoll_event));
-  ab->SetAlignedPointerInInternalField(1, events);
   args.GetReturnValue().Set(Integer::New(isolate, epoll_create1(flags)));
 }
 
@@ -774,8 +776,9 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
   int size = args[1]->Int32Value(context).ToChecked();
   int timeout = args[2]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> ab = args[3].As<ArrayBuffer>();
-  struct epoll_event* events = 
-    (struct epoll_event*)ab->GetAlignedPointerFromInternalField(1);
+  if (handles::handleMap.count(loopfd) == 0) return;
+  just::handles::handle* h = handles::handleMap.at(loopfd);
+  struct epoll_event* events = (struct epoll_event*)h->data;
   uint32_t* fields = static_cast<uint32_t*>(ab->GetContents().Data());
   int r = epoll_wait(loopfd, events, size, timeout);
   for (int i = 0; i < r; i++) {
@@ -884,6 +887,9 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     handle->Set(String::NewFromUtf8(isolate, "SIGNAL", 
       NewStringType::kNormal).ToLocalChecked(), 
       Integer::New(isolate, just::handles::handleType::SIGNAL));
+    handle->Set(String::NewFromUtf8(isolate, "LOOP", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, just::handles::handleType::LOOP));
     just->Set(String::NewFromUtf8(isolate, "handle",
       NewStringType::kNormal).ToLocalChecked(), 
       handle);
