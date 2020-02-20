@@ -9,11 +9,12 @@
 #include <sys/timerfd.h>
 #include <sys/resource.h> /* getrusage */
 #include <sys/wait.h>
+#include <unordered_map>
 #include "builtins.h"
 
 #define MICROS_PER_SEC 1e6
 
-ssize_t process_memory_usage() {
+ssize_t just_process_memory_usage() {
   char buf[1024];
   const char* s = NULL;
   ssize_t n = 0;
@@ -56,38 +57,12 @@ err:
   return 0;
 }
 
-static FILE* FOpen(const char* path, const char* mode) {
-  FILE* file = fopen(path, mode);
-  if (file == nullptr) return nullptr;
-  struct stat file_stat;
-  if (fstat(fileno(file), &file_stat) != 0) return nullptr;
-  bool is_regular_file = ((file_stat.st_mode & S_IFREG) != 0);
-  if (is_regular_file) return file;
-  fclose(file);
-  return nullptr;
-}
-
-static char* ReadChars(const char* name, int* size_out) {
-  FILE* file = FOpen(name, "rb");
-  if (file == nullptr) return nullptr;
-
-  fseek(file, 0, SEEK_END);
-  size_t size = ftell(file);
-  rewind(file);
-
-  char* chars = new char[size + 1];
-  chars[size] = '\0';
-  for (size_t i = 0; i < size;) {
-    i += fread(&chars[i], 1, size - i, file);
-    if (ferror(file)) {
-      fclose(file);
-      delete[] chars;
-      return nullptr;
-    }
-  }
-  fclose(file);
-  *size_out = static_cast<int>(size);
-  return chars;
+inline uint64_t just_hrtime() {
+  struct timespec t;
+  clock_t clock_id = CLOCK_MONOTONIC;
+  if (clock_gettime(clock_id, &t))
+    return 0;
+  return t.tv_sec * (uint64_t) 1e9 + t.tv_nsec;
 }
 
 namespace just {
@@ -126,14 +101,52 @@ using v8::Float64Array;
 using v8::HeapSpaceStatistics;
 using v8::BigUint64Array;
 using v8::Int32Array;
+using v8::Exception;
+
+enum handleType {
+  NONE,
+  SOCKET,
+  TIMER,
+  SIGNAL
+};
 
 typedef struct handle handle;
 
 struct handle {
   int fd;
+  handleType type;
   struct iovec* in;
   struct iovec* out;
+  void* data;
 };
+
+std::unordered_map<std::string, struct handle*> handles;
+
+MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
+  FILE *file = fopen(name, "rb");
+  if (file == NULL) {
+    isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, "Bad File", NewStringType::kNormal).ToLocalChecked()));
+    return MaybeLocal<String>();
+  }
+  fseek(file, 0, SEEK_END);
+  size_t size = ftell(file);
+  rewind(file);
+  char *chars = new char[size + 1];
+  chars[size] = '\0';
+  for (size_t i = 0; i < size;) {
+    i += fread(&chars[i], 1, size - i, file);
+    if (ferror(file)) {
+      fclose(file);
+      isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, "Read Error", NewStringType::kNormal).ToLocalChecked()));
+      delete[] chars;
+      return MaybeLocal<String>();
+    }
+  }
+  fclose(file);
+  MaybeLocal<String> result = String::NewFromUtf8(isolate, chars, NewStringType::kNormal, static_cast<int>(size));
+  delete[] chars;
+  return result;
+}
 
 MaybeLocal<Module> OnModuleInstantiate(Local<Context> context, 
   Local<String> specifier, Local<Module> referrer) {
@@ -164,23 +177,16 @@ void PrintStackTrace(Isolate* isolate, const TryCatch& try_catch) {
       if (stack_frame->GetScriptId() == Message::kNoScriptIdInfo) {
         fprintf(stderr, "    at [eval]:%i:%i\n", line_number, column);
       } else {
-        fprintf(stderr,
-                "    at [eval] (%s:%i:%i)\n",
-                *script_name,
-                line_number,
-                column);
+        fprintf(stderr, "    at [eval] (%s:%i:%i)\n", *script_name,
+          line_number, column);
       }
       break;
     }
     if (fn_name_s.length() == 0) {
       fprintf(stderr, "    at %s:%i:%i\n", *script_name, line_number, column);
     } else {
-      fprintf(stderr,
-              "    at %s (%s:%i:%i)\n",
-              *fn_name_s,
-              *script_name,
-              line_number,
-              column);
+      fprintf(stderr, "    at %s (%s:%i:%i)\n", *fn_name_s, *script_name,
+        line_number, column);
     }
   }
   fflush(stderr);
@@ -204,15 +210,6 @@ void Print(const FunctionCallbackInfo<Value> &args) {
 }
 
 namespace sys {
-
-inline uint64_t hrtime() {
-  static clock_t fast_clock_id = -1;
-  struct timespec t;
-  clock_t clock_id = CLOCK_MONOTONIC;
-  if (clock_gettime(clock_id, &t))
-    return 0;
-  return t.tv_sec * (uint64_t) 1e9 + t.tv_nsec;
-}
 
 void WaitPID(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
@@ -248,7 +245,6 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   fds[2] = args[5]->IntegerValue(context).ToChecked();
   int len = arguments->Length();
   char* argv[len + 2];
-  int written;
   for (int i = 0; i < len; i++) {
     String::Utf8Value val(isolate, arguments->Get(context, i).ToLocalChecked());
     argv[i + 1] = *val;
@@ -284,7 +280,7 @@ void HRTime(const FunctionCallbackInfo<Value> &args) {
   v8::HandleScope handleScope(isolate);
   Local<ArrayBuffer> ab = args[0].As<BigUint64Array>()->Buffer();
   uint64_t *fields = static_cast<uint64_t *>(ab->GetContents().Data());
-  fields[0] = hrtime();
+  fields[0] = just_hrtime();
 }
 
 void RunMicroTasks(const FunctionCallbackInfo<Value> &args) {
@@ -371,7 +367,7 @@ void NanoSleep(const FunctionCallbackInfo<Value> &args) {
 void MemoryUsage(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   v8::HandleScope handleScope(isolate);
-  ssize_t rss = process_memory_usage();
+  ssize_t rss = just_process_memory_usage();
   HeapStatistics v8_heap_stats;
   isolate->GetHeapStatistics(&v8_heap_stats);
   Local<Float64Array> array = args[0].As<Float64Array>();
@@ -579,6 +575,10 @@ void Bind(const FunctionCallbackInfo<Value> &args) {
   server_addr.sin_port = htons(port);
   inet_pton(AF_INET, *address, &(server_addr.sin_addr.s_addr));
   int r = bind(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
+  if (r < 0) {
+    context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
+      NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, errno));
+  }
   args.GetReturnValue().Set(Integer::New(isolate, 0));
 }
 
@@ -703,12 +703,11 @@ void EpollCtl(const FunctionCallbackInfo<Value> &args) {
   int loopfd = args[0]->Int32Value(context).ToChecked();
   int action = args[1]->Int32Value(context).ToChecked();
   int fd = args[2]->Int32Value(context).ToChecked();
-  int event = 0;
   struct epoll_event* e = NULL;
   if (args.Length() > 3) {
     // todo: figure out how to retain a refenece to this epoll_event and 
     // free it when we close the descriptor
-    event = args[3]->Int32Value(context).ToChecked();
+    int event = args[3]->Int32Value(context).ToChecked();
     e = (struct epoll_event *)calloc(1, sizeof(struct epoll_event));
     e->events = event;
     e->data.fd = fd;
@@ -742,11 +741,9 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
     (struct epoll_event*)ab->GetAlignedPointerFromInternalField(1);
   uint32_t* fields = static_cast<uint32_t*>(ab->GetContents().Data());
   int r = epoll_wait(loopfd, events, size, timeout);
-  int index = 0;
   for (int i = 0; i < r; i++) {
-    index = i * 2;
-    fields[index] = events[i].data.fd;
-    fields[index + 1] = events[i].events;
+    fields[i * 2] = events[i].data.fd;
+    fields[(i * 2) + 1] = events[i].events;
   }
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
@@ -978,10 +975,7 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     Local<Module> module;
     Local<String> base;
     if (argc > 1) {
-      int size = 0;
-      char* js_source = ReadChars(argv[1], &size);
-      base = String::NewFromUtf8(isolate, js_source, NewStringType::kNormal, 
-        size).ToLocalChecked();
+      base = ReadFile(isolate, argv[1]).ToLocalChecked();
     } else {
       base = String::NewFromUtf8(isolate, just_js, NewStringType::kNormal, 
         just_js_len).ToLocalChecked();

@@ -21,16 +21,6 @@ const {
   EPOLL_CTL_DEL
 } = loop
 
-const BUFSIZE = 524288
-const EVENTS = 1024
-let r = 0
-let rps = 0
-const loops = {}
-const sockets = {}
-const timers = {}
-const mem = new Float64Array(16)
-global.errno = 0
-
 function onEvent (index) {
   const fd = events[index]
   const event = events[index + 1]
@@ -74,6 +64,16 @@ function onEvent (index) {
     rps++
   }
 }
+
+const BUFSIZE = 524288
+const EVENTS = 1024
+let r = 0
+let rps = 0
+const loops = {}
+const sockets = {}
+const timers = {}
+const mem = new Float64Array(16)
+global.errno = 0
 
 const rbuf = sys.calloc(BUFSIZE, 1)
 const wbuf = sys.calloc(1, 'HTTP/1.1 200 OK\r\nContent-Length: 51\r\n\r\n<html><body><h1>Why hello there!</h1></body></html>')
