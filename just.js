@@ -6,7 +6,7 @@ global.errno = 0
 function destroyHandle (fd, loopfd) {
   const h = handles[fd]
   if (!h) {
-    just.print(fd)
+    just.print(`handle not found: ${fd}`)
     return
   }
   if (h.type === handle.SOCKET) {
@@ -20,7 +20,7 @@ function destroyHandle (fd, loopfd) {
 }
 
 function main () {
-  const BUFSIZE = 524288
+  const BUFSIZE = 16384
   const EVENTS = 1024
   let rps = 0
   const mem = new Float64Array(16)
