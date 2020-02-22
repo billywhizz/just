@@ -6,3 +6,5 @@ deps/v8/libv8_monolith.a
 deps/v8/gen
 deps/v8/src
 scratch
+*.o
+*.a

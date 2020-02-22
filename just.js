@@ -25,7 +25,7 @@ function main () {
   let rps = 0
   const mem = new Float64Array(16)
   const rbuf = sys.calloc(BUFSIZE, 1)
-  const wbuf = sys.calloc(1, 'HTTP/1.1 200 OK\r\nContent-Length: 51\r\n\r\n<html><body><h1>Why hello there!</h1></body></html>')
+  const wbuf = sys.calloc(1, 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n')
   const evbuf = sys.calloc(2 * EVENTS, 4)
   const tbuf = sys.calloc(1, 8) // 64 bit number
   const events = new Uint32Array(evbuf)

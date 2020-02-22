@@ -1,4 +1,5 @@
 #include <v8.h>
+#include <picohttpparser.h>
 #include <libplatform/libplatform.h>
 #include <unistd.h>
 #include <limits.h>
@@ -9,6 +10,7 @@
 #include <sys/timerfd.h>
 #include <sys/resource.h> /* getrusage */
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 #include <unordered_map>
 #include "builtins.h"
 
@@ -102,8 +104,19 @@ using v8::HeapSpaceStatistics;
 using v8::BigUint64Array;
 using v8::Int32Array;
 using v8::Exception;
+using v8::Signature;
+using v8::FunctionCallback;
 
 //std::unordered_map<std::string, struct handle*> handles;
+
+inline void JUST_SET_PROTOTYPE_METHOD(Isolate *isolate, Local<FunctionTemplate> recv, const char *name, FunctionCallback callback) {
+  HandleScope handle_scope(isolate);
+  Local<Signature> s = Signature::New(isolate, recv);
+  Local<FunctionTemplate> t = FunctionTemplate::New(isolate, callback, Local<Value>(), s);
+  Local<String> fn_name = String::NewFromUtf8(isolate, name, NewStringType::kInternalized).ToLocalChecked();
+  t->SetClassName(fn_name);
+  recv->PrototypeTemplate()->Set(fn_name, t);
+}
 
 MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
   FILE *file = fopen(name, "rb");
@@ -192,6 +205,153 @@ void Print(const FunctionCallbackInfo<Value> &args) {
   }
 }
 
+void Error(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  if (args[0].IsEmpty()) return;
+  String::Utf8Value str(args.GetIsolate(), args[0]);
+  int endline = 1;
+  if (args.Length() > 1) {
+    endline = static_cast<int>(args[1]->BooleanValue(isolate));
+  }
+  const char *cstr = *str;
+  if (endline == 1) {
+    fprintf(stderr, "%s\n", cstr);
+  } else {
+    fprintf(stderr, "%s", cstr);
+  }
+}
+
+namespace vm {
+
+void CompileScript(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  v8::TryCatch try_catch(isolate);
+  v8::Local<v8::String> source = args[0].As<v8::String>();
+  v8::Local<v8::String> path = args[1].As<v8::String>();
+  v8::Local<v8::Array> params_buf;
+  params_buf = args[2].As<v8::Array>();
+  v8::Local<v8::Array> context_extensions_buf;
+  context_extensions_buf = args[3].As<v8::Array>();
+  std::vector<v8::Local<v8::String>> params;
+  if (!params_buf.IsEmpty()) {
+    for (uint32_t n = 0; n < params_buf->Length(); n++) {
+      v8::Local<v8::Value> val;
+      if (!params_buf->Get(context, n).ToLocal(&val)) return;
+      params.push_back(val.As<v8::String>());
+    }
+  }
+  std::vector<v8::Local<v8::Object>> context_extensions;
+  if (!context_extensions_buf.IsEmpty()) {
+    for (uint32_t n = 0; n < context_extensions_buf->Length(); n++) {
+      v8::Local<v8::Value> val;
+      if (!context_extensions_buf->Get(context, n).ToLocal(&val)) return;
+      context_extensions.push_back(val.As<v8::Object>());
+    }
+  }
+  v8::ScriptOrigin baseorigin(path, // resource name
+    v8::Integer::New(isolate, 0), // line offset
+    v8::Integer::New(isolate, 0),  // column offset
+    v8::False(isolate), // is shared cross-origin
+    v8::Local<v8::Integer>(),  // script id
+    v8::Local<v8::Value>(), // source map url
+    v8::False(isolate), // is opaque
+    v8::False(isolate), // is wasm
+    v8::False(isolate)); // is module
+  v8::Context::Scope scope(context);
+  v8::ScriptCompiler::Source basescript(source, baseorigin);
+  v8::Local<v8::ScriptOrModule> script;
+  v8::MaybeLocal<v8::Function> maybe_fn = ScriptCompiler::CompileFunctionInContext(
+      context, &basescript, params.size(), params.data(),
+      context_extensions.size(), context_extensions.data(), v8::ScriptCompiler::kNoCompileOptions,
+      v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason, &script);
+  if (maybe_fn.IsEmpty()) {
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      try_catch.ReThrow();
+    }
+    return;
+  }
+  v8::Local<v8::Function> fn = maybe_fn.ToLocalChecked();
+  args.GetReturnValue().Set(fn);
+}
+
+void RunModule(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  v8::TryCatch try_catch(isolate);
+  Local<String> source = args[0].As<String>();
+  Local<String> path = args[1].As<String>();
+  v8::ScriptOrigin baseorigin(path, // resource name
+    v8::Integer::New(isolate, 0), // line offset
+    v8::Integer::New(isolate, 0),  // column offset
+    v8::False(isolate), // is shared cross-origin
+    v8::Local<v8::Integer>(),  // script id
+    v8::Local<v8::Value>(), // source map url
+    v8::False(isolate), // is opaque
+    v8::False(isolate), // is wasm
+    v8::True(isolate)); // is module
+  v8::Local<v8::Module> module;
+  v8::ScriptCompiler::Source basescript(source, baseorigin);
+  if (!v8::ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
+    PrintStackTrace(isolate, try_catch);
+    return;
+  }
+  v8::Maybe<bool> ok = module->InstantiateModule(context, OnModuleInstantiate);
+  if (!ok.ToChecked()) {
+    if (try_catch.HasCaught()) {
+      PrintStackTrace(isolate, try_catch);
+    }
+    return;
+  }
+  v8::MaybeLocal<v8::Value> result = module->Evaluate(context);
+  if (result.IsEmpty()) {
+    if (try_catch.HasCaught()) {
+      PrintStackTrace(isolate, try_catch);
+      return;
+    }
+  }
+  args.GetReturnValue().Set(result.ToLocalChecked());
+}
+
+void RunScript(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  v8::TryCatch try_catch(isolate);
+  Local<String> source = args[0].As<String>();
+  Local<String> path = args[1].As<String>();
+  v8::ScriptOrigin baseorigin(path, // resource name
+    v8::Integer::New(isolate, 0), // line offset
+    v8::Integer::New(isolate, 0),  // column offset
+    v8::False(isolate), // is shared cross-origin
+    v8::Local<v8::Integer>(),  // script id
+    v8::Local<v8::Value>(), // source map url
+    v8::False(isolate), // is opaque
+    v8::False(isolate), // is wasm
+    v8::False(isolate)); // is module
+  v8::Local<v8::Script> script;
+  v8::ScriptCompiler::Source basescript(source, baseorigin);
+  if (!v8::ScriptCompiler::Compile(context, &basescript).ToLocal(&script)) {
+    PrintStackTrace(isolate, try_catch);
+    return;
+  }
+  if (try_catch.HasCaught()) {
+    PrintStackTrace(isolate, try_catch);
+    return;
+  }
+  MaybeLocal<Value> result = script->Run(context);
+  if (try_catch.HasCaught()) {
+    PrintStackTrace(isolate, try_catch);
+    return;
+  }
+  args.GetReturnValue().Set(result.ToLocalChecked());
+}
+
+}
+
 namespace sys {
 
 void WaitPID(const FunctionCallbackInfo<Value> &args) {
@@ -210,7 +370,7 @@ void WaitPID(const FunctionCallbackInfo<Value> &args) {
     Local<Object> globalInstance = context->Global();
     globalInstance->Set(context, v8::String::NewFromUtf8(isolate, "errno", 
       v8::NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, 
-      errno));
+      errno)).Check();
   }
   args.GetReturnValue().Set(args[0]);
 }
@@ -264,6 +424,7 @@ void HRTime(const FunctionCallbackInfo<Value> &args) {
   Local<ArrayBuffer> ab = args[0].As<BigUint64Array>()->Buffer();
   uint64_t *fields = static_cast<uint64_t *>(ab->GetContents().Data());
   fields[0] = just_hrtime();
+  args.GetReturnValue().Set(ab);
 }
 
 void RunMicroTasks(const FunctionCallbackInfo<Value> &args) {
@@ -386,21 +547,21 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
   Local<Object> heaps = Object::New(isolate);
   o->Set(context, String::NewFromUtf8(isolate, "totalMemory", 
     v8::NewStringType::kNormal).ToLocalChecked(), 
-    Integer::New(isolate, v8_heap_stats.total_heap_size()));
+    Integer::New(isolate, v8_heap_stats.total_heap_size())).Check();
   o->Set(context, String::NewFromUtf8(isolate, "totalCommittedMemory", 
     v8::NewStringType::kNormal).ToLocalChecked(), 
-    Integer::New(isolate, v8_heap_stats.total_physical_size()));
+    Integer::New(isolate, v8_heap_stats.total_physical_size())).Check();
   o->Set(context, String::NewFromUtf8(isolate, "usedMemory", 
     v8::NewStringType::kNormal).ToLocalChecked(), 
-    Integer::New(isolate, v8_heap_stats.used_heap_size()));
+    Integer::New(isolate, v8_heap_stats.used_heap_size())).Check();
   o->Set(context, String::NewFromUtf8(isolate, "availableMemory", 
     v8::NewStringType::kNormal).ToLocalChecked(), 
-    Integer::New(isolate, v8_heap_stats.total_available_size()));
+    Integer::New(isolate, v8_heap_stats.total_available_size())).Check();
   o->Set(context, String::NewFromUtf8(isolate, "memoryLimit", 
     v8::NewStringType::kNormal).ToLocalChecked(), 
-    Integer::New(isolate, v8_heap_stats.heap_size_limit()));
+    Integer::New(isolate, v8_heap_stats.heap_size_limit())).Check();
   o->Set(context, String::NewFromUtf8(isolate, "heapSpaces", 
-    v8::NewStringType::kNormal).ToLocalChecked(), heaps);
+    v8::NewStringType::kNormal).ToLocalChecked(), heaps).Check();
   for (size_t i = 0; i < number_of_heap_spaces; i++) {
     isolate->GetHeapSpaceStatistics(&s, i);
     Local<Float64Array> array = spaces->Get(context, i)
@@ -412,7 +573,7 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
     fields[2] = s.space_size();
     fields[3] = s.space_used_size();
     heaps->Set(context, String::NewFromUtf8(isolate, s.space_name(), 
-      v8::NewStringType::kNormal).ToLocalChecked(), array);
+      v8::NewStringType::kNormal).ToLocalChecked(), array).Check();
   }
   args.GetReturnValue().Set(o);
 }
@@ -444,6 +605,42 @@ void Calloc(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(ab);
 }
 
+void ReadString(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
+  struct iovec* buf = (struct iovec*)ab->GetAlignedPointerFromInternalField(0);
+  int len = buf->iov_len;
+  int argc = args.Length();
+  if (argc > 1) {
+    len = args[1]->Int32Value(context).ToChecked();
+  }
+  int off = 0;
+  if (argc > 2) {
+    off = args[2]->Int32Value(context).ToChecked();
+  }
+  char* source = (char*)buf->iov_base + off;
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, source, NewStringType::kNormal, len).ToLocalChecked());
+}
+
+void WriteString(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
+  String::Utf8Value str(isolate, args[1]);
+  int off = 0;
+  if (args.Length() > 2) {
+    off = args[2]->Int32Value(context).ToChecked();
+  }
+  struct iovec* buf = (struct iovec*)ab->GetAlignedPointerFromInternalField(0);
+  char* source = (char*)buf->iov_base + off;
+  int len = str.length();
+  memcpy(source, *str, len);
+  args.GetReturnValue().Set(Integer::New(isolate, len));
+}
+
 void Free(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -462,23 +659,33 @@ void Fcntl(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
   int flags = args[1]->Int32Value(context).ToChecked();
-  int val = args[2]->Int32Value(context).ToChecked();
-  args.GetReturnValue().Set(Integer::New(isolate, fcntl(fd, flags, val)));
+  if (args.Length() > 2) {
+    int val = args[2]->Int32Value(context).ToChecked();
+    args.GetReturnValue().Set(Integer::New(isolate, fcntl(fd, flags, val)));
+    return;
+  }
+  args.GetReturnValue().Set(Integer::New(isolate, fcntl(fd, flags)));
 }
 
 void Cwd(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  char cwd[PATH_MAX];
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, getcwd(cwd, PATH_MAX), NewStringType::kNormal).ToLocalChecked());
+}
+
+void Env(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  char* cwd = (char*)calloc(1, PATH_MAX);
-  size_t size = 0;
-  if (getcwd(cwd, size) == NULL) {
-    free(cwd);
-    args.GetReturnValue().Set(v8::Null(isolate));
-    return;
+  Local<Context> context = isolate->GetCurrentContext();
+  int size = 0;
+  while (environ[size]) size++;
+  Local<v8::Array> envarr = v8::Array::New(isolate);
+  for (int i = 0; i < size; ++i) {
+    const char *var = environ[i];
+    envarr->Set(context, i, String::NewFromUtf8(isolate, var, v8::NewStringType::kNormal, strlen(var)).ToLocalChecked()).Check();
   }
-  args.GetReturnValue().Set(String::NewFromUtf8(isolate, cwd, 
-    NewStringType::kNormal).ToLocalChecked());
-  free(cwd);
+  args.GetReturnValue().Set(envarr);
 }
 
 void Timer(const FunctionCallbackInfo<Value> &args) {
@@ -506,9 +713,6 @@ void Timer(const FunctionCallbackInfo<Value> &args) {
 }
 
 void Signal(const FunctionCallbackInfo<Value> &args) {
-  Isolate *isolate = args.GetIsolate();
-  HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
 
 }
 
@@ -521,7 +725,9 @@ enum handleType {
   SOCKET,
   TIMER,
   SIGNAL,
-  LOOP
+  LOOP,
+  TTY,
+  PIPE
 };
 
 typedef struct handle handle;
@@ -531,6 +737,7 @@ struct handle {
   handleType type;
   struct iovec* in;
   struct iovec* out;
+  struct epoll_event* event;
   void* data;
 };
 
@@ -546,6 +753,7 @@ void CreateHandle(const FunctionCallbackInfo<Value> &args) {
   h->in = NULL;
   h->out = NULL;
   h->data = NULL;
+  h->event = NULL;
   int argc = args.Length();
   if (argc > 1) {
     h->type = static_cast<just::handles::handleType>(args[1]->Int32Value(context).ToChecked());
@@ -562,13 +770,13 @@ void CreateHandle(const FunctionCallbackInfo<Value> &args) {
     Local<ArrayBuffer> out = args[4].As<ArrayBuffer>();
     h->out = (struct iovec*)out->GetAlignedPointerFromInternalField(0);
   }
-  h->data = calloc(size, sizeof(struct epoll_event));
+  h->event = (struct epoll_event*)calloc(size, sizeof(struct epoll_event));
   handleMap.insert(std::pair<int, just::handles::handle*>(h->fd, h));
   Local<Object> handle = Object::New(isolate);
   handle->Set(context, String::NewFromUtf8(isolate, "type", 
-    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->type));
+    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->type)).Check();
   handle->Set(context, String::NewFromUtf8(isolate, "fd", 
-    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->fd));
+    NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, h->fd)).Check();
   args.GetReturnValue().Set(handle);
 }
 
@@ -579,10 +787,8 @@ void DestroyHandle(const FunctionCallbackInfo<Value> &args) {
   int fd = args[0]->Int32Value(context).ToChecked();
   if (handles::handleMap.count(fd) == 0) return;
   just::handles::handle* h = handles::handleMap.at(fd);
-  struct epoll_event* event = (struct epoll_event*)h->data;
+  struct epoll_event* event = h->event;
   free(event);
-  //if (h->in != NULL) free(h->in);
-  //if (h->out != NULL) free(h->out);
   if (h->type == just::handles::handleType::SOCKET) {
 
   }
@@ -643,7 +849,7 @@ void Bind(const FunctionCallbackInfo<Value> &args) {
   int r = bind(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
-      NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, errno));
+      NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, errno)).Check();
   }
   args.GetReturnValue().Set(Integer::New(isolate, 0));
 }
@@ -666,7 +872,7 @@ void Read(const FunctionCallbackInfo<Value> &args) {
   int r = read(h->fd, h->in->iov_base, h->in->iov_len);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
-      NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, errno));
+      NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, errno)).Check();
   }
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
@@ -677,11 +883,12 @@ void Recv(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
   if (handles::handleMap.count(fd) == 0) return;
+  // todo: offset and length arguments
   just::handles::handle* h = handles::handleMap.at(fd);
   int r = recv(h->fd, h->in->iov_base, h->in->iov_len, 0);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
-      NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, errno));
+      NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, errno)).Check();
   }
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
@@ -716,11 +923,9 @@ void Send(const FunctionCallbackInfo<Value> &args) {
   int fd = args[0]->Int32Value(context).ToChecked();
   if (handles::handleMap.count(fd) == 0) return;
   just::handles::handle* h = handles::handleMap.at(fd);
-  int len = 0;
+  int len = h->out->iov_len;
   if (args.Length() > 1) {
     len = args[1]->Int32Value(context).ToChecked();
-  } else {
-    len = h->out->iov_len;
   }
   args.GetReturnValue().Set(Integer::New(isolate, send(h->fd, 
     h->out->iov_base, len, MSG_NOSIGNAL)));
@@ -732,6 +937,106 @@ void Close(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
   args.GetReturnValue().Set(Integer::New(isolate, close(fd)));
+}
+
+}
+
+namespace http {
+
+#define MAX_HEADERS 16
+
+typedef struct requestState requestState;
+
+struct requestState {
+  int minor_version;
+  size_t method_len;
+  size_t path_len;
+  uint32_t body_length;
+  uint32_t body_bytes;
+  uint16_t header_size;
+  size_t num_headers;
+  struct phr_header* headers;
+  const char* path;
+  const char* method;
+};
+
+static requestState state;
+//static Persistent<Object> requestObj;
+
+void GetUrl(const v8::FunctionCallbackInfo<v8::Value> &args) {
+  Isolate* isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state.path, v8::NewStringType::kNormal, state.path_len).ToLocalChecked());
+}
+
+void GetMethod(const v8::FunctionCallbackInfo<v8::Value> &args) {
+  Isolate* isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state.method, v8::NewStringType::kNormal, state.method_len).ToLocalChecked());
+}
+
+void GetHeaders(const v8::FunctionCallbackInfo<v8::Value> &args) {
+  Isolate* isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> headers = Object::New(isolate);
+  for (size_t i = 0; i < state.num_headers; i++) {
+    struct phr_header* h = &state.headers[i];
+    headers->Set(context, String::NewFromUtf8(isolate, h->name, v8::NewStringType::kNormal, h->name_len).ToLocalChecked(), String::NewFromUtf8(isolate, h->value, v8::NewStringType::kNormal, h->value_len).ToLocalChecked()).Check();
+  }
+  args.GetReturnValue().Set(headers);
+}
+
+void GetRequest(const v8::FunctionCallbackInfo<v8::Value> &args) {
+  Isolate* isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> request = Object::New(isolate);
+  request->Set(context, String::NewFromUtf8(isolate, "minorVersion").ToLocalChecked(), Integer::New(isolate, state.minor_version)).Check();
+  request->Set(context, String::NewFromUtf8(isolate, "url").ToLocalChecked(), String::NewFromUtf8(isolate, state.path, v8::NewStringType::kNormal, state.path_len).ToLocalChecked()).Check();
+  request->Set(context, String::NewFromUtf8(isolate, "method").ToLocalChecked(), String::NewFromUtf8(isolate, state.method, v8::NewStringType::kNormal, state.method_len).ToLocalChecked()).Check();
+  Local<Object> headers = Object::New(isolate);
+  for (size_t i = 0; i < state.num_headers; i++) {
+    struct phr_header* h = &state.headers[i];
+    headers->Set(context, String::NewFromUtf8(isolate, h->name, v8::NewStringType::kNormal, h->name_len).ToLocalChecked(), String::NewFromUtf8(isolate, h->value, v8::NewStringType::kNormal, h->value_len).ToLocalChecked()).Check();
+  }
+  request->Set(context, String::NewFromUtf8(isolate, "headers").ToLocalChecked(), headers).Check();
+  args.GetReturnValue().Set(request);
+}
+
+void Init(Isolate* isolate) {
+  //Local<FunctionTemplate> req = FunctionTemplate::New(isolate);
+  //Local<Context> context = isolate->GetCurrentContext();
+  //req->SetClassName(String::NewFromUtf8(isolate, "Request").ToLocalChecked());
+  //req->InstanceTemplate()->SetInternalFieldCount(1);
+  //JUST_SET_PROTOTYPE_METHOD(isolate, req, "getUrl", GetUrl);
+  //JUST_SET_PROTOTYPE_METHOD(isolate, req, "getMethod", GetMethod);
+  //JUST_SET_PROTOTYPE_METHOD(isolate, req, "getHeaders", GetHeaders);
+  //JUST_SET_PROTOTYPE_METHOD(isolate, req, "getRequest", GetRequest);
+  //Local<Object> reqObj = req->GetFunction(context).ToLocalChecked()->NewInstance(context).ToLocalChecked();
+  state.headers = (struct phr_header*)calloc(MAX_HEADERS, sizeof(struct phr_header));
+  //requestObj.Reset(isolate, reqObj);
+}
+
+/*
+void Request(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  args.GetReturnValue().Set(Local<Object>::New(isolate, requestObj));
+}
+*/
+void ParseRequest(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  v8::HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  if (handles::handleMap.count(fd) == 0) return;
+  just::handles::handle* h = handles::handleMap.at(fd);
+  size_t bytes = args[1]->Int32Value(context).ToChecked();
+  size_t off = args[2]->Int32Value(context).ToChecked();
+  char* next = (char*)h->in->iov_base + off;
+  state.num_headers = MAX_HEADERS;
+  ssize_t nread = phr_parse_request(next, bytes, (const char **)&state.method, &state.method_len, (const char **)&state.path, &state.path_len, &state.minor_version, state.headers, &state.num_headers, 0);
+  args.GetReturnValue().Set(Integer::New(isolate, nread));
 }
 
 }
@@ -749,9 +1054,7 @@ void EpollCtl(const FunctionCallbackInfo<Value> &args) {
   if (args.Length() > 3) {
     if (handles::handleMap.count(fd) == 0) return;
     just::handles::handle* h = handles::handleMap.at(fd);
-    e = (struct epoll_event*)h->data;
-    // todo: figure out how to retain a refenece to this epoll_event and 
-    // free it when we close the descriptor
+    e = h->event;
     int mask = args[3]->Int32Value(context).ToChecked();
     e->events = mask;
     e->data.fd = fd;
@@ -778,7 +1081,7 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
   Local<ArrayBuffer> ab = args[3].As<ArrayBuffer>();
   if (handles::handleMap.count(loopfd) == 0) return;
   just::handles::handle* h = handles::handleMap.at(loopfd);
-  struct epoll_event* events = (struct epoll_event*)h->data;
+  struct epoll_event* events = h->event;
   uint32_t* fields = static_cast<uint32_t*>(ab->GetContents().Data());
   int r = epoll_wait(loopfd, events, size, timeout);
   for (int i = 0; i < r; i++) {
@@ -790,8 +1093,55 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
 
 }
 
+namespace fs {
+
+void ReadFile(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  String::Utf8Value fname(isolate, args[0]);
+  args.GetReturnValue().Set(just::ReadFile(isolate, *fname).ToLocalChecked());
+}
+
+void Open(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  String::Utf8Value fname(isolate, args[0]);
+  int flags = args[1]->Int32Value(context).ToChecked();
+  args.GetReturnValue().Set(Integer::New(isolate, open(*fname, flags)));
+}
+
+void Ioctl(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  int flags = args[1]->Int32Value(context).ToChecked();
+  args.GetReturnValue().Set(Integer::New(isolate, ioctl(fd, flags)));
+}
+
+}
+
+namespace tty {
+
+void TtyName(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  char path[256];
+  int r = ttyname_r(fd, path, sizeof(path));
+  if (r != 0) {
+    Local<Object> globalInstance = context->Global();
+    globalInstance->Set(context, v8::String::NewFromUtf8(isolate, "errno", 
+      v8::NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, 
+      errno)).Check();
+    return;
+  }
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, path).ToLocalChecked());
+}
+
+}
+
 int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
   Isolate::CreateParams create_params;
+  int statusCode = 0;
   create_params.array_buffer_allocator = 
     ArrayBuffer::Allocator::NewDefaultAllocator();
   Isolate *isolate = Isolate::New(create_params);
@@ -806,6 +1156,48 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     just->Set(String::NewFromUtf8(isolate, "print", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::Print));
+    just->Set(String::NewFromUtf8(isolate, "error", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::Error));
+
+    Local<ObjectTemplate> vm = ObjectTemplate::New(isolate);
+    vm->Set(String::NewFromUtf8(isolate, "compile", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::vm::CompileScript));
+    vm->Set(String::NewFromUtf8(isolate, "runModule", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::vm::RunModule));
+    vm->Set(String::NewFromUtf8(isolate, "runScript", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::vm::RunScript));
+    just->Set(String::NewFromUtf8(isolate, "vm", 
+      NewStringType::kNormal).ToLocalChecked(), vm);
+
+    Local<ObjectTemplate> tty = ObjectTemplate::New(isolate);
+    tty->Set(String::NewFromUtf8(isolate, "ttyName", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::tty::TtyName));
+    tty->Set(String::NewFromUtf8(isolate, "O_ACCMODE", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, O_ACCMODE));
+    tty->Set(String::NewFromUtf8(isolate, "FIOCLEX", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, FIOCLEX));
+    just->Set(String::NewFromUtf8(isolate, "tty", 
+      NewStringType::kNormal).ToLocalChecked(), tty);
+
+    Local<ObjectTemplate> fs = ObjectTemplate::New(isolate);
+    fs->Set(String::NewFromUtf8(isolate, "readFile", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::fs::ReadFile));
+    fs->Set(String::NewFromUtf8(isolate, "open", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::fs::Open));
+    fs->Set(String::NewFromUtf8(isolate, "ioctl", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::fs::Ioctl));
+    just->Set(String::NewFromUtf8(isolate, "fs", 
+      NewStringType::kNormal).ToLocalChecked(), fs);
 
     Local<ObjectTemplate> sys = ObjectTemplate::New(isolate);
     sys->Set(String::NewFromUtf8(isolate, "calloc", 
@@ -814,6 +1206,12 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     sys->Set(String::NewFromUtf8(isolate, "free", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::sys::Free));
+    sys->Set(String::NewFromUtf8(isolate, "readString", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::sys::ReadString));
+    sys->Set(String::NewFromUtf8(isolate, "writeString", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::sys::WriteString));
     sys->Set(String::NewFromUtf8(isolate, "fcntl", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::sys::Fcntl));
@@ -844,6 +1242,9 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     sys->Set(String::NewFromUtf8(isolate, "cwd", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::sys::Cwd));
+    sys->Set(String::NewFromUtf8(isolate, "env", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::sys::Env));
     sys->Set(String::NewFromUtf8(isolate, "runMicroTasks", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::sys::RunMicroTasks));
@@ -868,6 +1269,26 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     just->Set(String::NewFromUtf8(isolate, "sys", 
       NewStringType::kNormal).ToLocalChecked(), sys);
 
+    Local<ObjectTemplate> http = ObjectTemplate::New(isolate);
+    http->Set(String::NewFromUtf8(isolate, "parseRequest", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::http::ParseRequest));
+    http->Set(String::NewFromUtf8(isolate, "getUrl", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::http::GetUrl));
+    http->Set(String::NewFromUtf8(isolate, "getMethod", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::http::GetMethod));
+    http->Set(String::NewFromUtf8(isolate, "getHeaders", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::http::GetHeaders));
+    http->Set(String::NewFromUtf8(isolate, "getRequest", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      FunctionTemplate::New(isolate, just::http::GetRequest));
+    just->Set(String::NewFromUtf8(isolate, "http",
+      NewStringType::kNormal).ToLocalChecked(), 
+      http);
+
     Local<ObjectTemplate> handle = ObjectTemplate::New(isolate);
     handle->Set(String::NewFromUtf8(isolate, "create", 
       NewStringType::kNormal).ToLocalChecked(), 
@@ -890,6 +1311,12 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     handle->Set(String::NewFromUtf8(isolate, "LOOP", 
       NewStringType::kNormal).ToLocalChecked(), 
       Integer::New(isolate, just::handles::handleType::LOOP));
+    handle->Set(String::NewFromUtf8(isolate, "TTY", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, just::handles::handleType::TTY));
+    handle->Set(String::NewFromUtf8(isolate, "PIPE", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, just::handles::handleType::PIPE));
     just->Set(String::NewFromUtf8(isolate, "handle",
       NewStringType::kNormal).ToLocalChecked(), 
       handle);
@@ -1006,18 +1433,19 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     Local<Array> arguments = Array::New(isolate);
     for (int i = 0; i < argc; i++) {
       arguments->Set(context, i, String::NewFromUtf8(isolate, argv[i], 
-        NewStringType::kNormal, strlen(argv[i])).ToLocalChecked());
+        NewStringType::kNormal, strlen(argv[i])).ToLocalChecked()).Check();
     }
     Local<Object> globalInstance = context->Global();
     globalInstance->Set(context, String::NewFromUtf8(isolate, "global", 
-      NewStringType::kNormal).ToLocalChecked(), globalInstance);
+      NewStringType::kNormal).ToLocalChecked(), globalInstance).Check();
     Local<Value> obj = globalInstance->Get(context, String::NewFromUtf8(
         isolate, "just", 
         NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
     Local<Object> justInstance = Local<Object>::Cast(obj);
     justInstance->Set(context, String::NewFromUtf8(isolate, "args", 
-      NewStringType::kNormal).ToLocalChecked(), arguments);
+      NewStringType::kNormal).ToLocalChecked(), arguments).Check();
 
+    http::Init(isolate);
     const char* scriptName = "just.js";
     if (argc > 1) {
       scriptName = argv[1];
@@ -1068,11 +1496,8 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     if (func->IsFunction()) {
       Local<Function> onExit = Local<Function>::Cast(func);
       Local<Value> argv[0] = { };
-      TryCatch try_catch(isolate);
-      onExit->Call(context, globalInstance, 0, argv);
-      if (try_catch.HasCaught()) {
-        just::PrintStackTrace(isolate, try_catch);
-      }
+      Local<Value> result = onExit->Call(context, globalInstance, 0, argv).ToLocalChecked();
+      statusCode = result->Uint32Value(context).ToChecked();
       v8::platform::PumpMessageLoop(platform, isolate);
     }
     const double kLongIdlePauseInSeconds = 1.0;
@@ -1080,15 +1505,17 @@ int CreateIsolate(v8::Platform* platform, int argc, char** argv) {
     isolate->IdleNotificationDeadline(platform->MonotonicallyIncreasingTime() 
       + kLongIdlePauseInSeconds);
     isolate->LowMemoryNotification();
+
     bool stop = false;
     while(!stop) {
       stop = isolate->IdleNotificationDeadline(1);  
     }
+
   }
   isolate->Dispose();
   delete create_params.array_buffer_allocator;
   isolate = nullptr;
-  return 0;
+  return statusCode;
 }
 
 }
