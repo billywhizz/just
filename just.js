@@ -83,10 +83,6 @@ function main () {
     }
     r = loop.wait(loopfd, EVENTS, -1, evbuf)
   }
-  sys.free(rbuf)
-  sys.free(wbuf)
-  sys.free(evbuf)
-  sys.free(tbuf)
 }
 
 main()

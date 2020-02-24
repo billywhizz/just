@@ -14,7 +14,55 @@
 #include <unordered_map>
 #include "builtins.h"
 
-#define MICROS_PER_SEC 1e6
+#define JUST_MAX_HEADERS 16
+#define JUST_MICROS_PER_SEC 1e6
+
+namespace just {
+
+using v8::String;
+using v8::NewStringType;
+using v8::Local;
+using v8::Isolate;
+using v8::Context;
+using v8::ObjectTemplate;
+using v8::FunctionCallbackInfo;
+using v8::Function;
+using v8::Object;
+using v8::Value;
+using v8::Persistent;
+using v8::MaybeLocal;
+using v8::Module;
+using v8::TryCatch;
+using v8::Message;
+using v8::StackTrace;
+using v8::StackFrame;
+using v8::HandleScope;
+using v8::Integer;
+using v8::BigInt;
+using v8::FunctionTemplate;
+using v8::ScriptOrigin;
+using v8::True;
+using v8::False;
+using v8::ScriptCompiler;
+using v8::ArrayBuffer;
+using v8::Array;
+using v8::Maybe;
+using v8::ArrayBufferCreationMode;
+using v8::HeapStatistics;
+using v8::Float64Array;
+using v8::HeapSpaceStatistics;
+using v8::BigUint64Array;
+using v8::Int32Array;
+using v8::Exception;
+using v8::Signature;
+using v8::FunctionCallback;
+using v8::ScriptOrModule;
+using v8::Script;
+using v8::MicrotasksScope;
+using v8::Platform;
+using v8::V8;
+using v8::BackingStore;
+using v8::BackingStoreDeleterCallback;
 
 ssize_t just_process_memory_usage() {
   char buf[1024];
@@ -66,51 +114,6 @@ inline uint64_t just_hrtime() {
     return 0;
   return t.tv_sec * (uint64_t) 1e9 + t.tv_nsec;
 }
-
-namespace just {
-
-using v8::String;
-using v8::NewStringType;
-using v8::Local;
-using v8::Isolate;
-using v8::Context;
-using v8::ObjectTemplate;
-using v8::FunctionCallbackInfo;
-using v8::Function;
-using v8::Object;
-using v8::Value;
-using v8::Persistent;
-using v8::MaybeLocal;
-using v8::Module;
-using v8::TryCatch;
-using v8::Message;
-using v8::StackTrace;
-using v8::StackFrame;
-using v8::HandleScope;
-using v8::Integer;
-using v8::BigInt;
-using v8::FunctionTemplate;
-using v8::ScriptOrigin;
-using v8::True;
-using v8::False;
-using v8::ScriptCompiler;
-using v8::ArrayBuffer;
-using v8::Array;
-using v8::Maybe;
-using v8::ArrayBufferCreationMode;
-using v8::HeapStatistics;
-using v8::Float64Array;
-using v8::HeapSpaceStatistics;
-using v8::BigUint64Array;
-using v8::Int32Array;
-using v8::Exception;
-using v8::Signature;
-using v8::FunctionCallback;
-using v8::ScriptOrModule;
-using v8::Script;
-using v8::MicrotasksScope;
-using v8::Platform;
-using v8::V8;
 
 inline void JUST_SET_PROTOTYPE_METHOD(Isolate *isolate, Local<FunctionTemplate> 
   recv, const char *name, FunctionCallback callback) {
@@ -368,7 +371,8 @@ void WaitPID(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> ab = args[0].As<Int32Array>()->Buffer();
-  int *fields = static_cast<int *>(ab->GetContents().Data());
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  int *fields = static_cast<int *>(backing->Data());
   int pid = -1; // wait for any child process
   if (args.Length() > 1) {
     pid = args[0]->IntegerValue(context).ToChecked();
@@ -431,7 +435,8 @@ void HRTime(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<ArrayBuffer> ab = args[0].As<BigUint64Array>()->Buffer();
-  uint64_t *fields = static_cast<uint64_t *>(ab->GetContents().Data());
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  uint64_t *fields = static_cast<uint64_t *>(backing->Data());
   fields[0] = just_hrtime();
   args.GetReturnValue().Set(ab);
 }
@@ -462,10 +467,11 @@ void CPUUsage(const FunctionCallbackInfo<Value> &args) {
   getrusage(RUSAGE_SELF, &usage);
   Local<Float64Array> array = args[0].As<Float64Array>();
   Local<ArrayBuffer> ab = array->Buffer();
-  double *fields = static_cast<double *>(ab->GetContents().Data());
-  fields[0] = (MICROS_PER_SEC * usage.ru_utime.tv_sec) 
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  double *fields = static_cast<double *>(backing->Data());
+  fields[0] = (JUST_MICROS_PER_SEC * usage.ru_utime.tv_sec) 
     + usage.ru_utime.tv_usec;
-  fields[1] = (MICROS_PER_SEC * usage.ru_stime.tv_sec) 
+  fields[1] = (JUST_MICROS_PER_SEC * usage.ru_stime.tv_sec) 
     + usage.ru_stime.tv_usec;
   fields[2] = usage.ru_maxrss;
   fields[3] = usage.ru_ixrss;
@@ -525,7 +531,8 @@ void MemoryUsage(const FunctionCallbackInfo<Value> &args) {
   isolate->GetHeapStatistics(&v8_heap_stats);
   Local<Float64Array> array = args[0].As<Float64Array>();
   Local<ArrayBuffer> ab = array->Buffer();
-  double *fields = static_cast<double *>(ab->GetContents().Data());
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  double *fields = static_cast<double *>(backing->Data());
   fields[0] = rss;
   fields[1] = v8_heap_stats.total_heap_size();
   fields[2] = v8_heap_stats.used_heap_size();
@@ -576,7 +583,8 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
     Local<Float64Array> array = spaces->Get(context, i)
       .ToLocalChecked().As<Float64Array>();
     Local<ArrayBuffer> ab = array->Buffer();
-    double *fields = static_cast<double *>(ab->GetContents().Data());
+    std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+    double *fields = static_cast<double *>(backing->Data());
     fields[0] = s.physical_space_size();
     fields[1] = s.space_available_size();
     fields[2] = s.space_size();
@@ -585,6 +593,13 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
       NewStringType::kNormal).ToLocalChecked(), array).Check();
   }
   args.GetReturnValue().Set(o);
+}
+
+void FreeMemory(void* buf, size_t length, void* data) {
+  fprintf(stderr, "free: %lu\n", length);
+  Isolate *isolate = Isolate::GetCurrent();
+  free(buf);
+  isolate->AdjustAmountOfExternalAllocatedMemory(length * -1);
 }
 
 void Calloc(const FunctionCallbackInfo<Value> &args) {
@@ -605,12 +620,11 @@ void Calloc(const FunctionCallbackInfo<Value> &args) {
     size = args[1]->Uint32Value(context).ToChecked();
     chunk = calloc(count, size);
   }
-  struct iovec* buf = (struct iovec*)calloc(count, sizeof(struct iovec));
-  buf->iov_base = chunk;
-  buf->iov_len = count * size;
-  Local<ArrayBuffer> ab = ArrayBuffer::New(isolate, chunk, count * size, 
-    ArrayBufferCreationMode::kExternalized);
-  ab->SetAlignedPointerInInternalField(0, buf);
+  std::unique_ptr<BackingStore> backing =
+      ArrayBuffer::NewBackingStore(chunk, count * size, FreeMemory, nullptr);
+  Local<ArrayBuffer> ab =
+      ArrayBuffer::New(isolate, std::move(backing));
+  isolate->AdjustAmountOfExternalAllocatedMemory(count * size);
   args.GetReturnValue().Set(ab);
 }
 
@@ -619,8 +633,9 @@ void ReadString(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
-  struct iovec* buf = (struct iovec*)ab->GetAlignedPointerFromInternalField(0);
-  int len = buf->iov_len;
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  char *data = static_cast<char *>(backing->Data());
+  int len = backing->ByteLength();
   int argc = args.Length();
   if (argc > 1) {
     len = args[1]->Int32Value(context).ToChecked();
@@ -629,7 +644,7 @@ void ReadString(const FunctionCallbackInfo<Value> &args) {
   if (argc > 2) {
     off = args[2]->Int32Value(context).ToChecked();
   }
-  char* source = (char*)buf->iov_base + off;
+  char* source = data + off;
   args.GetReturnValue().Set(String::NewFromUtf8(isolate, source, 
     NewStringType::kNormal, len).ToLocalChecked());
 }
@@ -644,23 +659,13 @@ void WriteString(const FunctionCallbackInfo<Value> &args) {
   if (args.Length() > 2) {
     off = args[2]->Int32Value(context).ToChecked();
   }
-  struct iovec* buf = (struct iovec*)ab->GetAlignedPointerFromInternalField(0);
-  char* source = (char*)buf->iov_base + off;
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  char *data = static_cast<char *>(backing->Data());
+  char* source = data + off;
   int len = str.length();
+  // TODO: check overflow
   memcpy(source, *str, len);
   args.GetReturnValue().Set(Integer::New(isolate, len));
-}
-
-void Free(const FunctionCallbackInfo<Value> &args) {
-  Isolate *isolate = args.GetIsolate();
-  HandleScope handleScope(isolate);
-  Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
-  struct iovec* buf = (struct iovec*)ab->GetAlignedPointerFromInternalField(0);
-  free(buf->iov_base);
-  isolate->AdjustAmountOfExternalAllocatedMemory(buf->iov_len * -1);
-  free(buf);
-  ab->SetAlignedPointerInInternalField(0, NULL);
-  args.GetReturnValue().Set(Integer::New(isolate, 0));
 }
 
 void Fcntl(const FunctionCallbackInfo<Value> &args) {
@@ -747,8 +752,8 @@ typedef struct handle handle;
 struct handle {
   int fd;
   handleType type;
-  struct iovec* in;
-  struct iovec* out;
+  struct iovec in;
+  struct iovec out;
   struct epoll_event* event;
   void* data;
 };
@@ -763,8 +768,6 @@ void CreateHandle(const FunctionCallbackInfo<Value> &args) {
     sizeof(just::handles::handle));
   h->fd = args[0]->Int32Value(context).ToChecked();
   h->type = just::handles::handleType::NONE;
-  h->in = NULL;
-  h->out = NULL;
   h->data = NULL;
   h->event = NULL;
   int argc = args.Length();
@@ -778,11 +781,15 @@ void CreateHandle(const FunctionCallbackInfo<Value> &args) {
   }
   if (argc > 3) {
     Local<ArrayBuffer> in = args[3].As<ArrayBuffer>();
-    h->in = (struct iovec*)in->GetAlignedPointerFromInternalField(0);
+    std::shared_ptr<BackingStore> backing = in->GetBackingStore();
+    h->in.iov_base = static_cast<char *>(backing->Data());
+    h->in.iov_len = backing->ByteLength();
   }
   if (argc > 4) {
     Local<ArrayBuffer> out = args[4].As<ArrayBuffer>();
-    h->out = (struct iovec*)out->GetAlignedPointerFromInternalField(0);
+    std::shared_ptr<BackingStore> backing = out->GetBackingStore();
+    h->out.iov_base = static_cast<char *>(backing->Data());
+    h->out.iov_len = backing->ByteLength();
   }
   h->event = (struct epoll_event*)calloc(size, sizeof(struct epoll_event));
   handleMap.insert(std::pair<int, just::handles::handle*>(h->fd, h));
@@ -886,7 +893,7 @@ void Read(const FunctionCallbackInfo<Value> &args) {
   int fd = args[0]->Int32Value(context).ToChecked();
   if (handles::handleMap.count(fd) == 0) return;
   just::handles::handle* h = handles::handleMap.at(fd);
-  int r = read(h->fd, h->in->iov_base, h->in->iov_len);
+  int r = read(h->fd, h->in.iov_base, h->in.iov_len);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
       NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, 
@@ -903,7 +910,7 @@ void Recv(const FunctionCallbackInfo<Value> &args) {
   if (handles::handleMap.count(fd) == 0) return;
   // todo: offset and length arguments
   just::handles::handle* h = handles::handleMap.at(fd);
-  int r = recv(h->fd, h->in->iov_base, h->in->iov_len, 0);
+  int r = recv(h->fd, h->in.iov_base, h->in.iov_len, 0);
   if (r < 0) {
     context->Global()->Set(context, String::NewFromUtf8(isolate, "errno", 
       NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, 
@@ -918,14 +925,15 @@ void Write(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
   int len = 0;
   if (args.Length() > 2) {
     len = args[2]->Int32Value(context).ToChecked();
   } else {
-    len = ab->GetContents().ByteLength();
+    len = backing->ByteLength();
   }
   args.GetReturnValue().Set(Integer::New(isolate, send(fd, 
-    ab->GetContents().Data(), len, MSG_NOSIGNAL)));
+    backing->Data(), len, MSG_NOSIGNAL)));
 }
 
 void Writev(const FunctionCallbackInfo<Value> &args) {
@@ -942,12 +950,12 @@ void Send(const FunctionCallbackInfo<Value> &args) {
   int fd = args[0]->Int32Value(context).ToChecked();
   if (handles::handleMap.count(fd) == 0) return;
   just::handles::handle* h = handles::handleMap.at(fd);
-  int len = h->out->iov_len;
+  int len = h->out.iov_len;
   if (args.Length() > 1) {
     len = args[1]->Int32Value(context).ToChecked();
   }
   args.GetReturnValue().Set(Integer::New(isolate, send(h->fd, 
-    h->out->iov_base, len, MSG_NOSIGNAL)));
+    h->out.iov_base, len, MSG_NOSIGNAL)));
 }
 
 void Close(const FunctionCallbackInfo<Value> &args) {
@@ -962,8 +970,6 @@ void Close(const FunctionCallbackInfo<Value> &args) {
 
 namespace http {
 
-#define MAX_HEADERS 16
-
 typedef struct requestState requestState;
 
 struct requestState {
@@ -974,7 +980,7 @@ struct requestState {
   uint32_t body_bytes;
   uint16_t header_size;
   size_t num_headers;
-  struct phr_header headers[MAX_HEADERS];
+  struct phr_header headers[JUST_MAX_HEADERS];
   const char* path;
   const char* method;
 };
@@ -1046,8 +1052,8 @@ void ParseRequest(const FunctionCallbackInfo<Value> &args) {
   just::handles::handle* h = handles::handleMap.at(fd);
   size_t bytes = args[1]->Int32Value(context).ToChecked();
   size_t off = args[2]->Int32Value(context).ToChecked();
-  char* next = (char*)h->in->iov_base + off;
-  state.num_headers = MAX_HEADERS;
+  char* next = (char*)h->in.iov_base + off;
+  state.num_headers = JUST_MAX_HEADERS;
   ssize_t nread = phr_parse_request(next, bytes, (const char **)&state.method, 
     &state.method_len, (const char **)&state.path, &state.path_len, 
     &state.minor_version, state.headers, &state.num_headers, 0);
@@ -1097,7 +1103,8 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
   if (handles::handleMap.count(loopfd) == 0) return;
   just::handles::handle* h = handles::handleMap.at(loopfd);
   struct epoll_event* events = h->event;
-  uint32_t* fields = static_cast<uint32_t*>(ab->GetContents().Data());
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  uint32_t* fields = static_cast<uint32_t*>(backing->Data());
   int r = epoll_wait(loopfd, events, size, timeout);
   for (int i = 0; i < r; i++) {
     fields[i * 2] = events[i].data.fd;
@@ -1219,9 +1226,6 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
     sys->Set(String::NewFromUtf8(isolate, "calloc", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::sys::Calloc));
-    sys->Set(String::NewFromUtf8(isolate, "free", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Free));
     sys->Set(String::NewFromUtf8(isolate, "readString", 
       NewStringType::kNormal).ToLocalChecked(), 
       FunctionTemplate::New(isolate, just::sys::ReadString));
