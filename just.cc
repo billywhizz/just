@@ -1310,7 +1310,6 @@ int main(int argc, char** argv) {
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
 
-  // 1.5ms to js script being active
   just::CreateIsolate(platform.get(), argc, argv);
 
   v8::V8::Dispose();

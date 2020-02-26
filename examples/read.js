@@ -54,15 +54,6 @@ function run (target) {
 }
 
 run(target)
-run(target)
-run(target)
-run(target)
-run(target)
-run(target)
-run(target)
-run(target)
-run(target)
-run(target)
 
 close(fd)
 
