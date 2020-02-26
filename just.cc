@@ -64,7 +64,7 @@ using v8::V8;
 using v8::BackingStore;
 using v8::BackingStoreDeleterCallback;
 
-ssize_t just_process_memory_usage() {
+ssize_t process_memory_usage() {
   char buf[1024];
   const char* s = NULL;
   ssize_t n = 0;
@@ -107,7 +107,7 @@ err:
   return 0;
 }
 
-inline uint64_t just_hrtime() {
+inline uint64_t hrtime() {
   struct timespec t;
   clock_t clock_id = CLOCK_MONOTONIC;
   if (clock_gettime(clock_id, &t))
@@ -115,14 +115,14 @@ inline uint64_t just_hrtime() {
   return t.tv_sec * (uint64_t) 1e9 + t.tv_nsec;
 }
 
-inline void JUST_SET_METHOD(Isolate *isolate, Local<ObjectTemplate> 
+inline void SET_METHOD(Isolate *isolate, Local<ObjectTemplate> 
   recv, const char *name, FunctionCallback callback) {
   recv->Set(String::NewFromUtf8(isolate, name, 
     NewStringType::kNormal).ToLocalChecked(), 
     FunctionTemplate::New(isolate, callback));
 }
 
-inline void JUST_SET_MODULE(Isolate *isolate, Local<ObjectTemplate> 
+inline void SET_MODULE(Isolate *isolate, Local<ObjectTemplate> 
   recv, const char *name, Local<ObjectTemplate> module) {
   recv->Set(String::NewFromUtf8(isolate, name, 
     NewStringType::kNormal).ToLocalChecked(), 
@@ -431,11 +431,12 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
 void HRTime(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<ArrayBuffer> ab = args[0].As<BigUint64Array>()->Buffer();
+  Local<BigUint64Array> b64 = args[0].As<BigUint64Array>();
+  Local<ArrayBuffer> ab = b64->Buffer();
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
   uint64_t *fields = static_cast<uint64_t *>(backing->Data());
-  fields[0] = just_hrtime();
-  args.GetReturnValue().Set(ab);
+  fields[0] = hrtime();
+  args.GetReturnValue().Set(b64);
 }
 
 void RunMicroTasks(const FunctionCallbackInfo<Value> &args) {
@@ -537,7 +538,7 @@ void NanoSleep(const FunctionCallbackInfo<Value> &args) {
 void MemoryUsage(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  ssize_t rss = just_process_memory_usage();
+  ssize_t rss = process_memory_usage();
   HeapStatistics v8_heap_stats;
   isolate->GetHeapStatistics(&v8_heap_stats);
   Local<Float64Array> array = args[0].As<Float64Array>();
@@ -1073,6 +1074,7 @@ void TtyName(const FunctionCallbackInfo<Value> &args) {
 }
 
 int CreateIsolate(Platform* platform, int argc, char** argv) {
+  uint64_t start = hrtime();
   Isolate::CreateParams create_params;
   int statusCode = 0;
   create_params.array_buffer_allocator = 
@@ -1086,14 +1088,14 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
 
     Local<ObjectTemplate> global = ObjectTemplate::New(isolate);
     Local<ObjectTemplate> just = ObjectTemplate::New(isolate);
-    JUST_SET_METHOD(isolate, just, "print", just::Print);
-    JUST_SET_METHOD(isolate, just, "error", just::Error);
+    SET_METHOD(isolate, just, "print", just::Print);
+    SET_METHOD(isolate, just, "error", just::Error);
 
     Local<ObjectTemplate> vm = ObjectTemplate::New(isolate);
-    JUST_SET_METHOD(isolate, vm, "compile", just::vm::CompileScript);
-    JUST_SET_METHOD(isolate, vm, "runModule", just::vm::RunModule);
-    JUST_SET_METHOD(isolate, vm, "runScript", just::vm::RunScript);
-    JUST_SET_MODULE(isolate, just, "vm", vm);
+    SET_METHOD(isolate, vm, "compile", just::vm::CompileScript);
+    SET_METHOD(isolate, vm, "runModule", just::vm::RunModule);
+    SET_METHOD(isolate, vm, "runScript", just::vm::RunScript);
+    SET_MODULE(isolate, just, "vm", vm);
 
     Local<ObjectTemplate> tty = ObjectTemplate::New(isolate);
     tty->Set(String::NewFromUtf8(isolate, "ttyName", 
@@ -1317,6 +1319,10 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
       NewStringType::kNormal).ToLocalChecked(), 
       loop);
 
+    just->Set(String::NewFromUtf8(isolate, "START", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      BigInt::New(isolate, start));
+
     global->Set(String::NewFromUtf8(isolate, "just", 
       NewStringType::kNormal).ToLocalChecked(), just);
 
@@ -1422,6 +1428,7 @@ int main(int argc, char** argv) {
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
 
+  // 1.5ms to js script being active
   just::CreateIsolate(platform.get(), argc, argv);
 
   v8::V8::Dispose();
