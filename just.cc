@@ -4,14 +4,12 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/epoll.h>
-#include <sys/stat.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/timerfd.h>
 #include <sys/resource.h> /* getrusage */
 #include <sys/wait.h>
 #include <sys/ioctl.h>
-#include <unordered_map>
 #include "builtins.h"
 
 #define JUST_MAX_HEADERS 16
@@ -64,7 +62,7 @@ using v8::V8;
 using v8::BackingStore;
 using v8::BackingStoreDeleterCallback;
 
-ssize_t process_memory_usage() {
+inline ssize_t process_memory_usage() {
   char buf[1024];
   const char* s = NULL;
   ssize_t n = 0;
@@ -129,6 +127,13 @@ inline void SET_MODULE(Isolate *isolate, Local<ObjectTemplate>
     module);
 }
 
+inline void SET_VALUE(Isolate *isolate, Local<ObjectTemplate> 
+  recv, const char *name, Local<Value> value) {
+  recv->Set(String::NewFromUtf8(isolate, name, 
+    NewStringType::kNormal).ToLocalChecked(), 
+    value);
+}
+
 MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
   FILE *file = fopen(name, "rb");
   if (file == NULL) {
@@ -139,7 +144,7 @@ MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
   fseek(file, 0, SEEK_END);
   size_t size = ftell(file);
   rewind(file);
-  char *chars = new char[size + 1];
+  char chars[size + 1];
   chars[size] = '\0';
   for (size_t i = 0; i < size;) {
     i += fread(&chars[i], 1, size - i, file);
@@ -147,14 +152,12 @@ MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
       fclose(file);
       isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, 
         "Read Error", NewStringType::kNormal).ToLocalChecked()));
-      delete[] chars;
       return MaybeLocal<String>();
     }
   }
   fclose(file);
   MaybeLocal<String> result = String::NewFromUtf8(isolate, chars, 
     NewStringType::kNormal, static_cast<int>(size));
-  delete[] chars;
   return result;
 }
 
@@ -363,6 +366,14 @@ void RunScript(const FunctionCallbackInfo<Value> &args) {
     return;
   }
   args.GetReturnValue().Set(result.ToLocalChecked());
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> vm = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, vm, "compile", just::vm::CompileScript);
+  SET_METHOD(isolate, vm, "runModule", just::vm::RunModule);
+  SET_METHOD(isolate, vm, "runScript", just::vm::RunScript);
+  SET_MODULE(isolate, target, "vm", vm);
 }
 
 }
@@ -609,9 +620,7 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
 
 void FreeMemory(void* buf, size_t length, void* data) {
   fprintf(stderr, "free: %lu\n", length);
-  //Isolate *isolate = Isolate::GetCurrent();
   //free(buf);
-  //isolate->AdjustAmountOfExternalAllocatedMemory(length * -1);
 }
 
 void Calloc(const FunctionCallbackInfo<Value> &args) {
@@ -636,7 +645,6 @@ void Calloc(const FunctionCallbackInfo<Value> &args) {
       ArrayBuffer::NewBackingStore(chunk, count * size, FreeMemory, nullptr);
   Local<ArrayBuffer> ab =
       ArrayBuffer::New(isolate, std::move(backing));
-  //isolate->AdjustAmountOfExternalAllocatedMemory(count * size);
   args.GetReturnValue().Set(ab);
 }
 
@@ -742,6 +750,35 @@ void Timer(const FunctionCallbackInfo<Value> &args) {
 }
 
 void Signal(const FunctionCallbackInfo<Value> &args) {
+
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> sys = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, sys, "calloc", Calloc);
+  SET_METHOD(isolate, sys, "readString", ReadString);
+  SET_METHOD(isolate, sys, "writeString", WriteString);
+  SET_METHOD(isolate, sys, "fcntl", Fcntl);
+  SET_METHOD(isolate, sys, "sleep", Sleep);
+  SET_METHOD(isolate, sys, "timer", Timer);
+  SET_METHOD(isolate, sys, "signal", Signal);
+  SET_METHOD(isolate, sys, "memoryUsage", MemoryUsage);
+  SET_METHOD(isolate, sys, "heapUsage", HeapSpaceUsage);
+  SET_METHOD(isolate, sys, "pid", PID);
+  SET_METHOD(isolate, sys, "errno", Errno);
+  SET_METHOD(isolate, sys, "strerror", StrError);
+  SET_METHOD(isolate, sys, "cpuUsage", CPUUsage);
+  SET_METHOD(isolate, sys, "hrtime", HRTime);
+  SET_METHOD(isolate, sys, "cwd", Cwd);
+  SET_METHOD(isolate, sys, "end", Env);
+  SET_METHOD(isolate, sys, "runMicroTasks", RunMicroTasks);
+  SET_METHOD(isolate, sys, "nextTick", EnqueueMicrotask);
+  SET_METHOD(isolate, sys, "exit", Exit);
+  SET_METHOD(isolate, sys, "usleep", USleep);
+  SET_METHOD(isolate, sys, "nanosleep", NanoSleep);
+  SET_VALUE(isolate, sys, "F_GETFL", Integer::New(isolate, F_GETFL));
+  SET_VALUE(isolate, sys, "F_SETFL", Integer::New(isolate, F_SETFL));
+  SET_MODULE(isolate, target, "sys", sys);
 
 }
 
@@ -881,6 +918,31 @@ void Close(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, close(fd)));
 }
 
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> net = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, net, "socket", Socket);
+  SET_METHOD(isolate, net, "setsockopt", SetSockOpt);
+  SET_METHOD(isolate, net, "listen", Listen);
+  SET_METHOD(isolate, net, "bind", Bind);
+  SET_METHOD(isolate, net, "accept", Accept);
+  SET_METHOD(isolate, net, "read", Read);
+  SET_METHOD(isolate, net, "recv", Recv);
+  SET_METHOD(isolate, net, "write", Write);
+  SET_METHOD(isolate, net, "writev", Writev);
+  SET_METHOD(isolate, net, "send", Send);
+  SET_METHOD(isolate, net, "close", Close);
+  SET_VALUE(isolate, net, "AF_INET", Integer::New(isolate, AF_INET));
+  SET_VALUE(isolate, net, "SOCK_STREAM", Integer::New(isolate, SOCK_STREAM));
+  SET_VALUE(isolate, net, "SOCK_NONBLOCK", Integer::New(isolate, SOCK_NONBLOCK));
+  SET_VALUE(isolate, net, "SOL_SOCKET", Integer::New(isolate, SOL_SOCKET));
+  SET_VALUE(isolate, net, "SO_REUSEADDR", Integer::New(isolate, SO_REUSEADDR));
+  SET_VALUE(isolate, net, "SO_REUSEPORT", Integer::New(isolate, SO_REUSEPORT));
+  SET_VALUE(isolate, net, "SOMAXCONN", Integer::New(isolate, SOMAXCONN));
+  SET_VALUE(isolate, net, "O_NONBLOCK", Integer::New(isolate, O_NONBLOCK));
+  SET_VALUE(isolate, net, "EAGAIN", Integer::New(isolate, EAGAIN));
+  SET_MODULE(isolate, target, "net", net);
+}
+
 }
 
 namespace http {
@@ -978,6 +1040,16 @@ void ParseRequest(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, nread));
 }
 
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> http = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, http, "parseRequest", ParseRequest);
+  SET_METHOD(isolate, http, "getUrl", GetUrl);
+  SET_METHOD(isolate, http, "getMethod", GetMethod);
+  SET_METHOD(isolate, http, "getHeaders", GetHeaders);
+  SET_METHOD(isolate, http, "getRequest", GetRequest);
+  SET_MODULE(isolate, target, "http", http);
+}
+
 }
 
 namespace loop {
@@ -1023,6 +1095,22 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
 
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> loop = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, loop, "control", EpollCtl);
+  SET_METHOD(isolate, loop, "create", EpollCreate);
+  SET_METHOD(isolate, loop, "wait", EpollWait);
+  SET_VALUE(isolate, loop, "EPOLL_CLOEXEC", Integer::New(isolate, EPOLL_CLOEXEC));
+  SET_VALUE(isolate, loop, "EPOLL_CTL_ADD", Integer::New(isolate, EPOLL_CTL_ADD));
+  SET_VALUE(isolate, loop, "EPOLLIN", Integer::New(isolate, EPOLLIN));
+  SET_VALUE(isolate, loop, "EPOLLERR", Integer::New(isolate, EPOLLERR));
+  SET_VALUE(isolate, loop, "EPOLLHUP", Integer::New(isolate, EPOLLHUP));
+  SET_VALUE(isolate, loop, "EPOLLOUT", Integer::New(isolate, EPOLLOUT));
+  SET_VALUE(isolate, loop, "EPOLL_CTL_DEL", Integer::New(isolate, EPOLL_CTL_DEL));
+  SET_VALUE(isolate, loop, "EPOLLET", Integer::New(isolate, EPOLLET));
+  SET_MODULE(isolate, target, "loop", loop);
+}
+
 }
 
 namespace fs {
@@ -1057,6 +1145,14 @@ void Ioctl(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, ioctl(fd, flags)));
 }
 
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> fs = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, fs, "readFile", just::fs::ReadFile);
+  SET_METHOD(isolate, fs, "open", just::fs::Open);
+  SET_METHOD(isolate, fs, "ioctl", just::fs::Ioctl);
+  SET_MODULE(isolate, target, "fs", fs);
+}
+
 }
 
 namespace tty {
@@ -1069,6 +1165,14 @@ void TtyName(const FunctionCallbackInfo<Value> &args) {
   std::shared_ptr<BackingStore> backing = out->GetBackingStore();
   int r = ttyname_r(fd, (char*)backing->Data(), backing->ByteLength());
   args.GetReturnValue().Set(Integer::New(isolate, r));
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> tty = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, tty, "ttyName", TtyName);
+  SET_VALUE(isolate, tty, "O_ACCMODE", Integer::New(isolate, O_ACCMODE));
+  SET_VALUE(isolate, tty, "FIOCLEX", Integer::New(isolate, FIOCLEX));
+  SET_MODULE(isolate, target, "tty", tty);
 }
 
 }
@@ -1087,241 +1191,19 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
       StackTrace::kDetailed);
 
     Local<ObjectTemplate> global = ObjectTemplate::New(isolate);
+
     Local<ObjectTemplate> just = ObjectTemplate::New(isolate);
     SET_METHOD(isolate, just, "print", just::Print);
     SET_METHOD(isolate, just, "error", just::Error);
+    SET_VALUE(isolate, just, "START", BigInt::New(isolate, start));
 
-    Local<ObjectTemplate> vm = ObjectTemplate::New(isolate);
-    SET_METHOD(isolate, vm, "compile", just::vm::CompileScript);
-    SET_METHOD(isolate, vm, "runModule", just::vm::RunModule);
-    SET_METHOD(isolate, vm, "runScript", just::vm::RunScript);
-    SET_MODULE(isolate, just, "vm", vm);
-
-    Local<ObjectTemplate> tty = ObjectTemplate::New(isolate);
-    tty->Set(String::NewFromUtf8(isolate, "ttyName", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::tty::TtyName));
-    tty->Set(String::NewFromUtf8(isolate, "O_ACCMODE", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, O_ACCMODE));
-    tty->Set(String::NewFromUtf8(isolate, "FIOCLEX", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, FIOCLEX));
-    just->Set(String::NewFromUtf8(isolate, "tty", 
-      NewStringType::kNormal).ToLocalChecked(), tty);
-
-    Local<ObjectTemplate> fs = ObjectTemplate::New(isolate);
-    fs->Set(String::NewFromUtf8(isolate, "readFile", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::fs::ReadFile));
-    fs->Set(String::NewFromUtf8(isolate, "open", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::fs::Open));
-    fs->Set(String::NewFromUtf8(isolate, "ioctl", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::fs::Ioctl));
-    just->Set(String::NewFromUtf8(isolate, "fs", 
-      NewStringType::kNormal).ToLocalChecked(), fs);
-
-    Local<ObjectTemplate> sys = ObjectTemplate::New(isolate);
-    sys->Set(String::NewFromUtf8(isolate, "calloc", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Calloc));
-    sys->Set(String::NewFromUtf8(isolate, "readString", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::ReadString));
-    sys->Set(String::NewFromUtf8(isolate, "writeString", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::WriteString));
-    sys->Set(String::NewFromUtf8(isolate, "fcntl", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Fcntl));
-    sys->Set(String::NewFromUtf8(isolate, "sleep", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Sleep));
-    sys->Set(String::NewFromUtf8(isolate, "timer", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Timer));
-    sys->Set(String::NewFromUtf8(isolate, "signal", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Signal));
-    sys->Set(String::NewFromUtf8(isolate, "memoryUsage", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::MemoryUsage));
-    sys->Set(String::NewFromUtf8(isolate, "heapUsage", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::HeapSpaceUsage));
-    sys->Set(String::NewFromUtf8(isolate, "pid", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::PID));
-    sys->Set(String::NewFromUtf8(isolate, "errno", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Errno));
-    sys->Set(String::NewFromUtf8(isolate, "strerror", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::StrError));
-    sys->Set(String::NewFromUtf8(isolate, "cpuUsage", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::CPUUsage));
-    sys->Set(String::NewFromUtf8(isolate, "hrtime", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::HRTime));
-    sys->Set(String::NewFromUtf8(isolate, "cwd", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Cwd));
-    sys->Set(String::NewFromUtf8(isolate, "env", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Env));
-    sys->Set(String::NewFromUtf8(isolate, "runMicroTasks", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::RunMicroTasks));
-    sys->Set(String::NewFromUtf8(isolate, "nextTick", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::EnqueueMicrotask));
-    sys->Set(String::NewFromUtf8(isolate, "exit", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::Exit));
-    sys->Set(String::NewFromUtf8(isolate, "usleep", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::USleep));
-    sys->Set(String::NewFromUtf8(isolate, "nanosleep", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::sys::NanoSleep));
-    sys->Set(String::NewFromUtf8(isolate, "F_SETFL", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, F_SETFL));
-    sys->Set(String::NewFromUtf8(isolate, "F_GETFL", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, F_GETFL));
-    just->Set(String::NewFromUtf8(isolate, "sys", 
-      NewStringType::kNormal).ToLocalChecked(), sys);
-
-    Local<ObjectTemplate> http = ObjectTemplate::New(isolate);
-    http->Set(String::NewFromUtf8(isolate, "parseRequest", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::http::ParseRequest));
-    http->Set(String::NewFromUtf8(isolate, "getUrl", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::http::GetUrl));
-    http->Set(String::NewFromUtf8(isolate, "getMethod", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::http::GetMethod));
-    http->Set(String::NewFromUtf8(isolate, "getHeaders", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::http::GetHeaders));
-    http->Set(String::NewFromUtf8(isolate, "getRequest", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::http::GetRequest));
-    just->Set(String::NewFromUtf8(isolate, "http",
-      NewStringType::kNormal).ToLocalChecked(), 
-      http);
-
-    Local<ObjectTemplate> net = ObjectTemplate::New(isolate);
-    net->Set(String::NewFromUtf8(isolate, "socket", 
-      NewStringType::kNormal).ToLocalChecked(),
-      FunctionTemplate::New(isolate, just::net::Socket));
-    net->Set(String::NewFromUtf8(isolate, "setsockopt", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::SetSockOpt));
-    net->Set(String::NewFromUtf8(isolate, "listen", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Listen));
-    net->Set(String::NewFromUtf8(isolate, "bind", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Bind));
-    net->Set(String::NewFromUtf8(isolate, "accept", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Accept));
-    net->Set(String::NewFromUtf8(isolate, "read", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Read));
-    net->Set(String::NewFromUtf8(isolate, "recv", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Recv));
-    net->Set(String::NewFromUtf8(isolate, "write", 
-      NewStringType::kNormal).ToLocalChecked(), 
-        FunctionTemplate::New(isolate, just::net::Write));
-    net->Set(String::NewFromUtf8(isolate, "writev", 
-      NewStringType::kNormal).ToLocalChecked(), 
-        FunctionTemplate::New(isolate, just::net::Writev));
-    net->Set(String::NewFromUtf8(isolate, "send", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Send));
-    net->Set(String::NewFromUtf8(isolate, "close", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::net::Close));
-    net->Set(String::NewFromUtf8(isolate, "AF_INET", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, AF_INET));
-    net->Set(String::NewFromUtf8(isolate, "SOCK_STREAM", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, SOCK_STREAM));
-    net->Set(String::NewFromUtf8(isolate, "SOCK_NONBLOCK", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, SOCK_NONBLOCK));
-    net->Set(String::NewFromUtf8(isolate, "SOL_SOCKET", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, SOL_SOCKET));
-    net->Set(String::NewFromUtf8(isolate, "SO_REUSEADDR", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, SO_REUSEADDR));
-    net->Set(String::NewFromUtf8(isolate, "SO_REUSEPORT", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, SO_REUSEPORT));
-    net->Set(String::NewFromUtf8(isolate, "SOMAXCONN", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, SOMAXCONN));
-    net->Set(String::NewFromUtf8(isolate, "O_NONBLOCK", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, O_NONBLOCK));
-    net->Set(String::NewFromUtf8(isolate, "EAGAIN", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EAGAIN));
-    just->Set(String::NewFromUtf8(isolate, "net", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      net);
-
-    Local<ObjectTemplate> loop = ObjectTemplate::New(isolate);
-    loop->Set(String::NewFromUtf8(isolate, "control", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::loop::EpollCtl));
-    loop->Set(String::NewFromUtf8(isolate, "create", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::loop::EpollCreate));
-    loop->Set(String::NewFromUtf8(isolate, "wait", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      FunctionTemplate::New(isolate, just::loop::EpollWait));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLL_CLOEXEC", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLL_CLOEXEC));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLL_CTL_ADD", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLL_CTL_ADD));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLLIN", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLLIN));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLLERR", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLLERR));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLLHUP", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLLHUP));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLLOUT", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLLOUT));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLL_CTL_DEL", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLL_CTL_DEL));
-    loop->Set(String::NewFromUtf8(isolate, "EPOLLET", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      Integer::New(isolate, EPOLLET));
-    just->Set(String::NewFromUtf8(isolate, "loop", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      loop);
-
-    just->Set(String::NewFromUtf8(isolate, "START", 
-      NewStringType::kNormal).ToLocalChecked(), 
-      BigInt::New(isolate, start));
+    vm::Init(isolate, just);
+    tty::Init(isolate, just);
+    fs::Init(isolate, just);
+    sys::Init(isolate, just);
+    http::Init(isolate, just);
+    net::Init(isolate, just);
+    loop::Init(isolate, just);
 
     global->Set(String::NewFromUtf8(isolate, "just", 
       NewStringType::kNormal).ToLocalChecked(), just);
@@ -1404,7 +1286,7 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
     isolate->IdleNotificationDeadline(platform->MonotonicallyIncreasingTime() 
       + kLongIdlePauseInSeconds);
     isolate->LowMemoryNotification();
-
+    isolate->ClearKeptObjects();
     bool stop = false;
     while(!stop) {
       stop = isolate->IdleNotificationDeadline(1);  
