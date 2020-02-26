@@ -1,88 +1,79 @@
-const { sys, net, loop, handle } = just
-
-const handles = {}
-global.errno = 0
-
-function destroyHandle (fd, loopfd) {
-  const h = handles[fd]
-  if (!h) {
-    just.print(`handle not found: ${fd}`)
-    return
-  }
-  if (h.type === handle.SOCKET) {
-    loop.control(loopfd, loop.EPOLL_CTL_DEL, fd)
-  } else if (h.type === handle.TIMER) {
-    loop.control(loopfd, loop.EPOLL_CTL_DEL, fd)
-  }
-  net.close(fd)
-  handle.destroy(fd)
-  delete handles[fd]
-}
-
 function main () {
+  const { sys, net, loop } = just
+  let rps = 0
   const BUFSIZE = 16384
   const EVENTS = 1024
-  let rps = 0
+  const { EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLLIN, EPOLLERR, EPOLLHUP } = loop
+  const { SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_INET, SOCK_NONBLOCK, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT } = net
+  const handlers = {}
+
+  function onTimerEvent (fd, event) {
+    const rss = sys.memoryUsage(mem)[0]
+    just.print(`rps ${rps} mem ${rss}`)
+    net.read(fd, tbuf)
+    rps = 0
+  }
+
+  function onListenEvent (fd, event) {
+    const clientfd = net.accept(fd)
+    handlers[clientfd] = onSocketEvent
+    let flags = sys.fcntl(clientfd, sys.F_GETFL, 0)
+    flags |= O_NONBLOCK
+    sys.fcntl(clientfd, sys.F_SETFL, flags)
+    loop.control(loopfd, EPOLL_CTL_ADD, clientfd, EPOLLIN)
+  }
+
+  function onSocketEvent (fd, event) {
+    if (event & EPOLLERR || event & EPOLLHUP) {
+      net.close(fd)
+      return
+    }
+    const bytes = net.recv(fd, rbuf)
+    if (bytes > 0) {
+      net.send(fd, wbuf)
+      rps++
+      return
+    }
+    if (bytes < 0) {
+      const errno = sys.errno()
+      if (errno !== net.EAGAIN) {
+        just.print(`recv error: ${sys.strerror(errno)} (${errno})`)
+        net.close(fd)
+      }
+      return
+    }
+    net.close(fd)
+  }
+
   const mem = new Float64Array(16)
   const rbuf = sys.calloc(BUFSIZE, 1)
   const wbuf = sys.calloc(1, 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n')
-  const evbuf = sys.calloc(2 * EVENTS, 4)
-  const tbuf = sys.calloc(1, 8) // 64 bit number
+  const evbuf = sys.calloc(EVENTS, 12)
+  const tbuf = sys.calloc(1, 8)
   const events = new Uint32Array(evbuf)
-  const loopfd = loop.create(loop.EPOLL_CLOEXEC, 1024, evbuf)
-  const sockfd = net.socket(net.AF_INET, net.SOCK_STREAM | net.SOCK_NONBLOCK, 0)
+  const loopfd = loop.create(EPOLL_CLOEXEC)
   const timerfd = sys.timer(1000, 1000)
-  handles[timerfd] = handle.create(timerfd, handle.TIMER, 1, tbuf)
-  handles[sockfd] = handle.create(sockfd, handle.SOCKET)
-  handles[loopfd] = handle.create(loopfd, handle.LOOP, EVENTS)
-  let r = net.setsockopt(sockfd, net.SOL_SOCKET, net.SO_REUSEADDR, 1)
-  r = net.setsockopt(sockfd, net.SOL_SOCKET, net.SO_REUSEPORT, 1)
+  handlers[timerfd] = onTimerEvent
+  const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
+  handlers[sockfd] = onListenEvent
+  let r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
+  r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
   r = net.bind(sockfd, '127.0.0.1', 3000)
-  r = net.listen(sockfd, net.SOMAXCONN)
-  r = loop.control(loopfd, loop.EPOLL_CTL_ADD, timerfd, loop.EPOLLIN)
-  r = loop.control(loopfd, loop.EPOLL_CTL_ADD, sockfd, loop.EPOLLIN)
-  r = loop.wait(loopfd, EVENTS, -1, evbuf)
+  r = net.listen(sockfd, SOMAXCONN)
+  r = loop.control(loopfd, EPOLL_CTL_ADD, sockfd, EPOLLIN)
+  r = loop.control(loopfd, EPOLL_CTL_ADD, timerfd, EPOLLIN)
+  r = loop.wait(loopfd, evbuf)
   while (r > 0) {
+    let off = 0
     for (let i = 0; i < r; i++) {
-      const index = i * 2
-      const fd = events[index]
-      const event = events[index + 1]
-      if (event & loop.EPOLLERR || event & loop.EPOLLHUP) {
-        destroyHandle(fd, loopfd)
-        continue
-      }
-      if (fd === sockfd) {
-        const client = handle.create(net.accept(sockfd), handle.SOCKET, 1, rbuf, wbuf)
-        let flags = sys.fcntl(client.fd, sys.F_GETFL, 0)
-        flags |= net.O_NONBLOCK
-        sys.fcntl(client.fd, sys.F_SETFL, flags)
-        loop.control(loopfd, loop.EPOLL_CTL_ADD, client.fd, loop.EPOLLIN)
-        handles[client.fd] = client
-        continue
-      }
-      if (fd === timerfd) {
-        const rss = sys.memoryUsage(mem)[0]
-        just.print(`rps ${rps} mem ${rss}`)
-        net.read(fd)
-        rps = 0
-        continue
-      }
-      if (event & loop.EPOLLOUT) {
-        continue
-      }
-      if (event & loop.EPOLLIN) {
-        const bytes = net.recv(fd)
-        if (bytes === -1 && global.errno === net.EAGAIN) continue
-        if (bytes === 0) {
-          destroyHandle(fd, loopfd)
-          continue
-        }
-        net.send(fd)
-        rps++
-      }
+      const fd = events[off + 1]
+      handlers[fd](fd, events[off])
+      off += 3
     }
-    r = loop.wait(loopfd, EVENTS, -1, evbuf)
+    r = loop.wait(loopfd, evbuf)
   }
 }
 
 main()
+
+// 238k rps
