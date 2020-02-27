@@ -9,7 +9,10 @@
 #include <sys/timerfd.h>
 #include <sys/resource.h> /* getrusage */
 #include <sys/wait.h>
+#include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/un.h>
+#include <netinet/tcp.h>
 #include "builtins.h"
 
 #define JUST_MAX_HEADERS 16
@@ -807,6 +810,56 @@ void SetSockOpt(const FunctionCallbackInfo<Value> &args) {
     option, &value, sizeof(int))));
 }
 
+void GetSockName(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  int domain = args[1]->Int32Value(context).ToChecked();
+  if (domain == AF_INET) {
+    Local<Array> answer = args[2].As<Array>();
+    struct sockaddr_in address;
+    socklen_t namelen = (socklen_t)sizeof(address);
+    getsockname(fd, (struct sockaddr*)&address, &namelen);
+    char addr[INET_ADDRSTRLEN];
+    socklen_t size = sizeof(address);
+    inet_ntop(AF_INET, &address.sin_addr, addr, size);
+    answer->Set(context, 0, String::NewFromUtf8(isolate, addr, v8::NewStringType::kNormal, strlen(addr)).ToLocalChecked()).Check();
+    answer->Set(context, 1, Integer::New(isolate, ntohs(address.sin_port))).Check();
+    args.GetReturnValue().Set(answer);
+  } else {
+    struct sockaddr_un address;
+    socklen_t namelen = (socklen_t)sizeof(address);
+    getsockname(fd, (struct sockaddr*)&address, &namelen);
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, address.sun_path, v8::NewStringType::kNormal, strlen(address.sun_path)).ToLocalChecked());
+  }
+}
+
+void GetPeerName(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  int domain = args[1]->Int32Value(context).ToChecked();
+  if (domain == AF_INET) {
+    Local<Array> answer = args[2].As<Array>();
+    struct sockaddr_in address;
+    socklen_t namelen = (socklen_t)sizeof(address);
+    getpeername(fd, (struct sockaddr*)&address, &namelen);
+    char addr[INET_ADDRSTRLEN];
+    socklen_t size = sizeof(address);
+    inet_ntop(AF_INET, &address.sin_addr, addr, size);
+    answer->Set(context, 0, String::NewFromUtf8(isolate, addr, v8::NewStringType::kNormal, strlen(addr)).ToLocalChecked()).Check();
+    answer->Set(context, 1, Integer::New(isolate, ntohs(address.sin_port))).Check();
+    args.GetReturnValue().Set(answer);
+  } else {
+    struct sockaddr_un address;
+    socklen_t namelen = (socklen_t)sizeof(address);
+    getpeername(fd, (struct sockaddr*)&address, &namelen);
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, address.sun_path, v8::NewStringType::kNormal, strlen(address.sun_path)).ToLocalChecked());
+  }
+}
+
 void Listen(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -816,18 +869,71 @@ void Listen(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, listen(fd, backlog)));
 }
 
+void SocketPair(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int domain = args[0]->Int32Value(context).ToChecked();
+  int type = args[1]->Int32Value(context).ToChecked();
+  Local<Array> answer = args[2].As<Array>();
+  int fd[2];
+  int r = socketpair(domain, type, 0, fd);
+  if (r == 0) {
+    answer->Set(context, 0, Integer::New(isolate, fd[0])).Check();
+    answer->Set(context, 1, Integer::New(isolate, fd[1])).Check();
+  }
+  args.GetReturnValue().Set(Integer::New(isolate, r));
+}
+
+void Connect(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  int r = 0;
+  if (args.Length() > 2) {
+    int socktype = AF_INET;
+    String::Utf8Value address(isolate, args[1]);
+    int port = args[2]->Int32Value(context).ToChecked();
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = socktype;
+    server_addr.sin_port = htons(port);
+    inet_pton(socktype, *address, &(server_addr.sin_addr.s_addr));
+    r = connect(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
+  } else {
+    int socktype = AF_UNIX;
+    String::Utf8Value path(isolate, args[1]);
+    struct sockaddr_un server_addr;
+    server_addr.sun_family = socktype;
+    strncpy(server_addr.sun_path, *path, sizeof(server_addr.sun_path));
+    r = connect(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
+  }
+  args.GetReturnValue().Set(Integer::New(isolate, r));
+}
+
 void Bind(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
-  String::Utf8Value address(isolate, args[1]);
-  int port = args[2]->Int32Value(context).ToChecked();
-  struct sockaddr_in server_addr;
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(port);
-  inet_pton(AF_INET, *address, &(server_addr.sin_addr.s_addr));
-  int r = bind(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
+  int r = 0;
+  if (args.Length() > 2) {
+    int socktype = AF_INET;
+    String::Utf8Value address(isolate, args[1]);
+    int port = args[2]->Int32Value(context).ToChecked();
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = socktype;
+    server_addr.sin_port = htons(port);
+    inet_pton(socktype, *address, &(server_addr.sin_addr.s_addr));
+    r = bind(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
+  } else {
+    int socktype = AF_UNIX;
+    String::Utf8Value path(isolate, args[1]);
+    struct sockaddr_un server_addr;
+    server_addr.sun_family = socktype;
+    strncpy(server_addr.sun_path, *path, sizeof(server_addr.sun_path));
+    r = bind(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
+  }
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
 
@@ -923,6 +1029,8 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, net, "socket", Socket);
   SET_METHOD(isolate, net, "setsockopt", SetSockOpt);
   SET_METHOD(isolate, net, "listen", Listen);
+  SET_METHOD(isolate, net, "connect", Connect);
+  SET_METHOD(isolate, net, "socketpair", SocketPair);
   SET_METHOD(isolate, net, "bind", Bind);
   SET_METHOD(isolate, net, "accept", Accept);
   SET_METHOD(isolate, net, "read", Read);
@@ -931,12 +1039,18 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, net, "writev", Writev);
   SET_METHOD(isolate, net, "send", Send);
   SET_METHOD(isolate, net, "close", Close);
+  SET_METHOD(isolate, net, "getsockname", GetSockName);
+  SET_METHOD(isolate, net, "getpeername", GetPeerName);
   SET_VALUE(isolate, net, "AF_INET", Integer::New(isolate, AF_INET));
+  SET_VALUE(isolate, net, "AF_UNIX", Integer::New(isolate, AF_UNIX));
   SET_VALUE(isolate, net, "SOCK_STREAM", Integer::New(isolate, SOCK_STREAM));
   SET_VALUE(isolate, net, "SOCK_NONBLOCK", Integer::New(isolate, SOCK_NONBLOCK));
   SET_VALUE(isolate, net, "SOL_SOCKET", Integer::New(isolate, SOL_SOCKET));
   SET_VALUE(isolate, net, "SO_REUSEADDR", Integer::New(isolate, SO_REUSEADDR));
   SET_VALUE(isolate, net, "SO_REUSEPORT", Integer::New(isolate, SO_REUSEPORT));
+  SET_VALUE(isolate, net, "IPPROTO_TCP", Integer::New(isolate, IPPROTO_TCP));
+  SET_VALUE(isolate, net, "TCP_NODELAY", Integer::New(isolate, TCP_NODELAY));
+  SET_VALUE(isolate, net, "SO_KEEPALIVE", Integer::New(isolate, SO_KEEPALIVE));
   SET_VALUE(isolate, net, "SOMAXCONN", Integer::New(isolate, SOMAXCONN));
   SET_VALUE(isolate, net, "O_NONBLOCK", Integer::New(isolate, O_NONBLOCK));
   SET_VALUE(isolate, net, "EAGAIN", Integer::New(isolate, EAGAIN));
@@ -1102,6 +1216,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, loop, "wait", EpollWait);
   SET_VALUE(isolate, loop, "EPOLL_CLOEXEC", Integer::New(isolate, EPOLL_CLOEXEC));
   SET_VALUE(isolate, loop, "EPOLL_CTL_ADD", Integer::New(isolate, EPOLL_CTL_ADD));
+  SET_VALUE(isolate, loop, "EPOLL_CTL_MOD", Integer::New(isolate, EPOLL_CTL_MOD));
   SET_VALUE(isolate, loop, "EPOLLIN", Integer::New(isolate, EPOLLIN));
   SET_VALUE(isolate, loop, "EPOLLERR", Integer::New(isolate, EPOLLERR));
   SET_VALUE(isolate, loop, "EPOLLHUP", Integer::New(isolate, EPOLLHUP));

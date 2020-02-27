@@ -1,15 +1,16 @@
 function main () {
   const { sys, net, loop } = just
   let rps = 0
+  let conn = 0
   const BUFSIZE = 16384
   const EVENTS = 1024
   const { EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLLIN, EPOLLERR, EPOLLHUP } = loop
-  const { SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_INET, SOCK_NONBLOCK, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT } = net
+  const { SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_UNIX, SOCK_NONBLOCK } = net
   const handlers = {}
 
   function onTimerEvent (fd, event) {
     const rss = sys.memoryUsage(mem)[0]
-    just.print(`rps ${rps} mem ${rss}`)
+    just.print(`rps ${rps} mem ${rss} conn ${conn}`)
     net.read(fd, tbuf)
     rps = 0
   }
@@ -21,11 +22,13 @@ function main () {
     flags |= O_NONBLOCK
     sys.fcntl(clientfd, sys.F_SETFL, flags)
     loop.control(loopfd, EPOLL_CTL_ADD, clientfd, EPOLLIN)
+    conn++
   }
 
   function onSocketEvent (fd, event) {
     if (event & EPOLLERR || event & EPOLLHUP) {
       net.close(fd)
+      conn--
       return
     }
     const bytes = net.recv(fd, rbuf)
@@ -39,10 +42,12 @@ function main () {
       if (errno !== net.EAGAIN) {
         just.print(`recv error: ${sys.strerror(errno)} (${errno})`)
         net.close(fd)
+        conn--
       }
       return
     }
     net.close(fd)
+    conn--
   }
 
   const mem = new Float64Array(16)
@@ -54,11 +59,9 @@ function main () {
   const loopfd = loop.create(EPOLL_CLOEXEC)
   const timerfd = sys.timer(1000, 1000)
   handlers[timerfd] = onTimerEvent
-  const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
+  const sockfd = net.socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0)
   handlers[sockfd] = onListenEvent
-  let r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
-  r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
-  r = net.bind(sockfd, '127.0.0.1', 3000)
+  let r = net.bind(sockfd, './unix.socket')
   r = net.listen(sockfd, SOMAXCONN)
   r = loop.control(loopfd, EPOLL_CTL_ADD, sockfd, EPOLLIN)
   r = loop.control(loopfd, EPOLL_CTL_ADD, timerfd, EPOLLIN)
