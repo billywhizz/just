@@ -1,6 +1,5 @@
 # Environment
 
-
 ## count.js
 
 counts the bytes piped to stdin. uses the event loop and non blocking sockets
@@ -41,3 +40,15 @@ synchronous reading of /dev/zero from filesystem
 displays the time to js being active
 - 4ms for initial isolate
 - 1.5ms for subsequent isolates
+
+## httpd.js
+
+tcp http server using picohttpparser
+- 225k non pipelined rps with headers parsed
+- 130k non pipelined rps with headers fully converted to JS
+
+## httpc.js
+
+tcp http client using picohttpparser
+- 225k non pipelined rps with headers parsed
+- 130k non pipelined rps with headers fully converted to JS

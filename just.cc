@@ -1061,10 +1061,12 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
 
 namespace http {
 
-typedef struct requestState requestState;
+typedef struct httpContext httpContext;
 
-struct requestState {
+struct httpContext {
   int minor_version;
+  int status;
+  size_t status_message_len;
   size_t method_len;
   size_t path_len;
   uint32_t body_length;
@@ -1074,9 +1076,10 @@ struct requestState {
   struct phr_header headers[JUST_MAX_HEADERS];
   const char* path;
   const char* method;
+  const char* status_message;
 };
 
-requestState state;
+httpContext state;
 
 void GetUrl(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
@@ -1090,6 +1093,19 @@ void GetMethod(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   args.GetReturnValue().Set(String::NewFromUtf8(isolate, state.method, 
     NewStringType::kNormal, state.method_len).ToLocalChecked());
+}
+
+void GetStatusCode(const FunctionCallbackInfo<Value> &args) {
+  Isolate* isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  args.GetReturnValue().Set(Integer::New(isolate, state.status));
+}
+
+void GetStatusMessage(const FunctionCallbackInfo<Value> &args) {
+  Isolate* isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state.status_message, 
+    NewStringType::kNormal, state.status_message_len).ToLocalChecked());
 }
 
 void GetHeaders(const FunctionCallbackInfo<Value> &args) {
@@ -1134,6 +1150,33 @@ void GetRequest(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(request);
 }
 
+void GetResponse(const FunctionCallbackInfo<Value> &args) {
+  Isolate* isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> request = Object::New(isolate);
+  request->Set(context, String::NewFromUtf8(isolate, 
+    "minorVersion").ToLocalChecked(), Integer::New(isolate, 
+    state.minor_version)).Check();
+  request->Set(context, String::NewFromUtf8(isolate, 
+    "statusCode").ToLocalChecked(), Integer::New(isolate, 
+    state.status)).Check();
+  request->Set(context, String::NewFromUtf8(isolate, 
+    "statusMessage").ToLocalChecked(), String::NewFromUtf8(isolate, state.status_message, 
+    NewStringType::kNormal, state.status_message_len).ToLocalChecked()).Check();
+  Local<Object> headers = Object::New(isolate);
+  for (size_t i = 0; i < state.num_headers; i++) {
+    struct phr_header* h = &state.headers[i];
+    headers->Set(context, String::NewFromUtf8(isolate, h->name, 
+      NewStringType::kNormal, h->name_len).ToLocalChecked(), 
+      String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
+      h->value_len).ToLocalChecked()).Check();
+  }
+  request->Set(context, String::NewFromUtf8(isolate, 
+    "headers").ToLocalChecked(), headers).Check();
+  args.GetReturnValue().Set(request);
+}
+
 void ParseRequest(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -1154,13 +1197,37 @@ void ParseRequest(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, nread));
 }
 
+void ParseResponse(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
+  size_t bytes = args[1]->Int32Value(context).ToChecked();
+  int argc = args.Length();
+  size_t off = 0;
+  if (argc > 2) {
+    off = args[2]->Int32Value(context).ToChecked();
+  }
+  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  char* next = (char*)backing->Data() + off;
+  state.num_headers = JUST_MAX_HEADERS;
+  ssize_t nread = phr_parse_response(next, bytes, &state.minor_version, 
+    &state.status, (const char **)&state.status_message, 
+    &state.status_message_len, state.headers, &state.num_headers, 0);
+  args.GetReturnValue().Set(Integer::New(isolate, nread));
+}
+
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> http = ObjectTemplate::New(isolate);
   SET_METHOD(isolate, http, "parseRequest", ParseRequest);
+  SET_METHOD(isolate, http, "parseResponse", ParseResponse);
   SET_METHOD(isolate, http, "getUrl", GetUrl);
+  SET_METHOD(isolate, http, "getStatusCode", GetStatusCode);
+  SET_METHOD(isolate, http, "getStatusMessage", GetStatusMessage);
   SET_METHOD(isolate, http, "getMethod", GetMethod);
   SET_METHOD(isolate, http, "getHeaders", GetHeaders);
   SET_METHOD(isolate, http, "getRequest", GetRequest);
+  SET_METHOD(isolate, http, "getResponse", GetResponse);
   SET_MODULE(isolate, target, "http", http);
 }
 
@@ -1326,11 +1393,13 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
     Local<Context> context = Context::New(isolate, NULL, global);
     Context::Scope context_scope(context);
     context->AllowCodeGenerationFromStrings(false);
+
     Local<Array> arguments = Array::New(isolate);
     for (int i = 0; i < argc; i++) {
       arguments->Set(context, i, String::NewFromUtf8(isolate, argv[i], 
         NewStringType::kNormal, strlen(argv[i])).ToLocalChecked()).Check();
     }
+
     Local<Object> globalInstance = context->Global();
     globalInstance->Set(context, String::NewFromUtf8(isolate, "global", 
       NewStringType::kNormal).ToLocalChecked(), globalInstance).Check();
@@ -1371,6 +1440,7 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
       PrintStackTrace(isolate, try_catch);
       return 1;
     }
+
     Maybe<bool> ok = module->InstantiateModule(context, 
       just::OnModuleInstantiate);
     if (!ok.ToChecked()) {
@@ -1384,7 +1454,9 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
         return 2;
       }
     }
+
     v8::platform::PumpMessageLoop(platform, isolate);
+
     Local<Value> func = globalInstance->Get(context, 
       String::NewFromUtf8(isolate, "onExit", 
         NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
@@ -1396,6 +1468,7 @@ int CreateIsolate(Platform* platform, int argc, char** argv) {
       statusCode = result->Uint32Value(context).ToChecked();
       v8::platform::PumpMessageLoop(platform, isolate);
     }
+
     const double kLongIdlePauseInSeconds = 2.0;
     isolate->ContextDisposedNotification();
     isolate->IdleNotificationDeadline(platform->MonotonicallyIncreasingTime() 
