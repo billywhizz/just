@@ -635,7 +635,7 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
 }
 
 void FreeMemory(void* buf, size_t length, void* data) {
-  fprintf(stderr, "free: %lu\n", length);
+  //fprintf(stderr, "free: %lu\n", length);
 }
 
 void Calloc(const FunctionCallbackInfo<Value> &args) {

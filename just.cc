@@ -7,7 +7,7 @@ namespace embedder {
 
 void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   just::InitModules(isolate, just);
-  thread::Init(isolate, just);
+  thread::Init(isolate, just, InitModules);
 }
 
 int Start(int argc, char** argv) {
