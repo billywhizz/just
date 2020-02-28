@@ -1030,8 +1030,8 @@ void Write(const FunctionCallbackInfo<Value> &args) {
   } else {
     len = backing->ByteLength();
   }
-  args.GetReturnValue().Set(Integer::New(isolate, send(fd, 
-    backing->Data(), len, MSG_NOSIGNAL)));
+  args.GetReturnValue().Set(Integer::New(isolate, write(fd, 
+    backing->Data(), len)));
 }
 
 void Writev(const FunctionCallbackInfo<Value> &args) {
@@ -1526,9 +1526,6 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
       NewStringType::kNormal).ToLocalChecked(), arguments).Check();
 
     const char* scriptName = "just.js";
-    if (argc > 1) {
-      scriptName = argv[1];
-    }
     TryCatch try_catch(isolate);
     ScriptOrigin baseorigin(
       String::NewFromUtf8(isolate, scriptName, 
@@ -1544,12 +1541,8 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     );
     Local<Module> module;
     Local<String> base;
-    if (argc > 1) {
-      base = ReadFile(isolate, argv[1]).ToLocalChecked();
-    } else {
-      base = String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
-        js_len).ToLocalChecked();
-    }
+    base = String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
+      js_len).ToLocalChecked();
     ScriptCompiler::Source basescript(base, baseorigin);
     if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
       PrintStackTrace(isolate, try_catch);
