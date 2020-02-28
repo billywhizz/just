@@ -8,3 +8,6 @@ deps/v8/src
 scratch
 *.o
 *.a
+*.socket
+*.sock
+out

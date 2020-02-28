@@ -1595,5 +1595,9 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
   return statusCode;
 }
 
+int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules) {
+  return CreateIsolate(argc, argv, InitModules, NULL, 0, NULL, 0);
+}
+
 }
 #endif

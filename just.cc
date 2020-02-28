@@ -21,7 +21,7 @@ int Start(int argc, char** argv) {
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
   // create the isolate and evaluate the JS
-  just::CreateIsolate(argc, argv, InitModules, NULL, 0, NULL, 0);
+  just::CreateIsolate(argc, argv, InitModules);
   v8::V8::Dispose();
   v8::V8::ShutdownPlatform();
   platform.reset();

@@ -1,0 +1,35 @@
+{
+    "extension": "linecount",
+    "version": "0.1.7",
+    "workspace": "/home/andrew/Documents/source/cpp/just",
+    "linecount": [
+        {
+            "version": "0.1.7",
+            "counttime": "2020-02-28 07:08:20",
+            "filesum": 3,
+            "codesum": 1824,
+            "commentsum": 41,
+            "blanksum": 145,
+            "filelist": [
+                {
+                    "blank": 7,
+                    "code": 27,
+                    "comment": 3,
+                    "filename": "just.cc"
+                },
+                {
+                    "blank": 119,
+                    "code": 1483,
+                    "comment": 37,
+                    "filename": "just.h"
+                },
+                {
+                    "blank": 19,
+                    "code": 314,
+                    "comment": 1,
+                    "filename": "just.js"
+                }
+            ]
+        }
+    ]
+}
