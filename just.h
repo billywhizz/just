@@ -814,7 +814,8 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "exit", Exit);
   SET_METHOD(isolate, sys, "usleep", USleep);
   SET_METHOD(isolate, sys, "nanosleep", NanoSleep);
-  SET_VALUE(isolate, sys, "CLOCK_MONOTONIC", Integer::New(isolate, CLOCK_MONOTONIC));
+  SET_VALUE(isolate, sys, "CLOCK_MONOTONIC", Integer::New(isolate, 
+    CLOCK_MONOTONIC));
   SET_VALUE(isolate, sys, "TFD_NONBLOCK", Integer::New(isolate, TFD_NONBLOCK));
   SET_VALUE(isolate, sys, "TFD_CLOEXEC", Integer::New(isolate, TFD_CLOEXEC));
   SET_VALUE(isolate, sys, "F_GETFL", Integer::New(isolate, F_GETFL));
@@ -1528,7 +1529,8 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     if (js_len > 0) {
       justInstance->Set(context, String::NewFromUtf8(isolate, "workerSource", 
         NewStringType::kNormal).ToLocalChecked(), 
-        String::NewFromUtf8(isolate, js, NewStringType::kNormal, js_len).ToLocalChecked()).Check();
+        String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
+        js_len).ToLocalChecked()).Check();
     }
     const char* scriptName = "just.js";
     TryCatch try_catch(isolate);

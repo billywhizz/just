@@ -6,9 +6,7 @@ namespace just {
 namespace embedder {
 
 void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
-  // initialize the core modules
   just::InitModules(isolate, just);
-  // initialize your own modules
   thread::Init(isolate, just);
 }
 
@@ -20,7 +18,6 @@ int Start(int argc, char** argv) {
   v8::V8::InitializePlatform(platform.get());
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
-  // create the isolate and evaluate the JS
   just::CreateIsolate(argc, argv, InitModules);
   v8::V8::Dispose();
   v8::V8::ShutdownPlatform();
