@@ -63,3 +63,7 @@ tcp http client using picohttpparser
 - spawns a thread with a shared buffer and a socketpair fd
 - sends data over the pipe to the thread
 - makes atomic reads and writes on the shared buffer
+
+## child.js
+
+- spawn a child process and read stdin and stderr

@@ -418,9 +418,13 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   fds[2] = args[5]->IntegerValue(context).ToChecked();
   int len = arguments->Length();
   char* argv[len + 2];
+  int written = 0;
+  argv[0] = (char*)calloc(1, filePath.length());
+  memcpy(argv[0], *filePath, filePath.length());
   for (int i = 0; i < len; i++) {
-    String::Utf8Value val(isolate, arguments->Get(context, i).ToLocalChecked());
-    argv[i + 1] = *val;
+    Local<String> val = arguments->Get(context, i).ToLocalChecked().As<v8::String>();
+    argv[i + 1] = (char*)calloc(1, val->Length());
+    val->WriteUtf8(isolate, argv[i + 1], val->Length(), &written, v8::String::HINT_MANY_WRITES_EXPECTED | v8::String::NO_NULL_TERMINATION);
   }
   argv[len + 1] = NULL;
   pid_t pid = fork();
@@ -791,7 +795,8 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "cpuUsage", CPUUsage);
   SET_METHOD(isolate, sys, "hrtime", HRTime);
   SET_METHOD(isolate, sys, "cwd", Cwd);
-  SET_METHOD(isolate, sys, "end", Env);
+  SET_METHOD(isolate, sys, "env", Env);
+  SET_METHOD(isolate, sys, "spawn", Spawn);
   SET_METHOD(isolate, sys, "runMicroTasks", RunMicroTasks);
   SET_METHOD(isolate, sys, "nextTick", EnqueueMicrotask);
   SET_METHOD(isolate, sys, "exit", Exit);
