@@ -1,7 +1,7 @@
-FROM alpine:3.10
+FROM alpine:3.11
 
 WORKDIR /build
-RUN apk update && apk upgrade && apt add git curl python sudo bash
+RUN apk update && apk upgrade && apk add git curl python sudo bash
 RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
 ENV PATH="/build/depot_tools:${PATH}"
 RUN gclient
