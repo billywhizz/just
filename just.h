@@ -18,6 +18,7 @@
 #include <netinet/tcp.h>
 #include <sys/utsname.h>
 #include <gnu/libc-version.h>
+#include "builtins.h"
 
 #define JUST_MAX_HEADERS 16
 #define JUST_MICROS_PER_SEC 1e6
@@ -1524,7 +1525,11 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     }
     justInstance->Set(context, String::NewFromUtf8(isolate, "args", 
       NewStringType::kNormal).ToLocalChecked(), arguments).Check();
-
+    if (js_len > 0) {
+      justInstance->Set(context, String::NewFromUtf8(isolate, "workerSource", 
+        NewStringType::kNormal).ToLocalChecked(), 
+        String::NewFromUtf8(isolate, js, NewStringType::kNormal, js_len).ToLocalChecked()).Check();
+    }
     const char* scriptName = "just.js";
     TryCatch try_catch(isolate);
     ScriptOrigin baseorigin(
@@ -1541,8 +1546,9 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     );
     Local<Module> module;
     Local<String> base;
-    base = String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
-      js_len).ToLocalChecked();
+
+    base = String::NewFromUtf8(isolate, just_js, NewStringType::kNormal, 
+      just_js_len).ToLocalChecked();
     ScriptCompiler::Source basescript(base, baseorigin);
     if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
       PrintStackTrace(isolate, try_catch);

@@ -1,7 +1,7 @@
-const { net, sys } = just
+const { net, sys, path, args } = just
 const { socketpair, AF_UNIX, SOCK_STREAM } = net
 
-function threadMain () {
+function ipcTest () {
   const { net, sys } = just
   const fd = just.fd
   const shared = just.buffer
@@ -21,9 +21,10 @@ socketpair(AF_UNIX, SOCK_STREAM, fds)
 const shared = sys.calloc(1, 1024, true)
 const u8 = new Uint8Array(shared)
 const buf = sys.calloc(1, 4096)
-let source = threadMain.toString()
+let source = ipcTest.toString()
 source = source.slice(source.indexOf('{') + 1, source.lastIndexOf('}')).trim()
-const tid = just.thread.spawn(source, shared, fds[1])
+const threadName = `${path.join(sys.cwd(), args[1])}#ipcTest`
+const tid = just.thread.spawn(source, shared, fds[1], threadName)
 let counter = 10
 do {
   const len = sys.writeString(buf, `counter: ${counter}`)

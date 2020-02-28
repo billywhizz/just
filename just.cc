@@ -1,5 +1,4 @@
 #include "just.h"
-#include "builtins.h"
 #include "crypto.h"
 #include "thread.h"
 
@@ -24,7 +23,7 @@ int Start(int argc, char** argv) {
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
   // create the isolate and evaluate the JS
-  just::CreateIsolate(argc, argv, InitModules, just_js, just_js_len, NULL, 0);
+  just::CreateIsolate(argc, argv, InitModules, NULL, 0, NULL, 0);
   v8::V8::Dispose();
   v8::V8::ShutdownPlatform();
   platform.reset();

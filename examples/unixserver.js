@@ -66,7 +66,10 @@ function main () {
   const sockfd = net.socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0)
   handlers[sockfd] = onListenEvent
   let r = fs.unlink('./unix.socket')
-  if (r !== 0) throw new Error(`unlink ${r} errno ${sys.errno()} : ${sys.strerror(sys.errno())}`)
+  if (r !== 0) {
+    const errno = sys.errno()
+    if (errno !== 2) throw new Error(`unlink ${r} errno ${errno} : ${sys.strerror(errno)}`)
+  }
   r = net.bind(sockfd, './unix.socket')
   if (r !== 0) throw new Error(`bind ${r} errno ${sys.errno()} : ${sys.strerror(sys.errno())}`)
   r = net.listen(sockfd, SOMAXCONN)

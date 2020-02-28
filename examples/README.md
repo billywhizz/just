@@ -18,7 +18,7 @@ dumb tcp web server for benchmarking. uses event loop, sockets, timers
 ## unixserver.js
 
 dumb unix domain socket web server for benchmarking. uses event loop, sockets, timers
-- 382k non pipelined rps
+- 417k non pipelined rps
 
 ## client.js
 
@@ -28,7 +28,7 @@ tcp http client to stress the server with 128 clients
 ## unixclient.js
 
 unix domain socket http client to stress the server with 128 clients
-- 382k non pipelined rps
+- 417k non pipelined rps
 
 ## read.js
 
@@ -44,13 +44,13 @@ displays the time to js being active
 ## httpd.js
 
 tcp http server using picohttpparser
-- 225k non pipelined rps with headers parsed
+- 235k non pipelined rps with headers parsed
 - 130k non pipelined rps with headers fully converted to JS
 
 ## httpc.js
 
 tcp http client using picohttpparser
-- 225k non pipelined rps with headers parsed
+- 235k non pipelined rps with headers parsed
 - 130k non pipelined rps with headers fully converted to JS
 
 ## thread.js
@@ -71,3 +71,7 @@ tcp http client using picohttpparser
 ## loop.js
 
 - run multiple event loops
+
+## http-simple-client.js
+
+- synchronous http get request

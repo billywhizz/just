@@ -41,8 +41,6 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   threadContext* ctx = (threadContext*)calloc(1, sizeof(threadContext));
   ctx->argc = 1;
   ctx->argv = new char*[2];
-  ctx->argv[0] = new char[4];
-  strncpy(ctx->argv[0], "just", 4);
   ctx->argv[1] = NULL;
 	ctx->source = (char*)calloc(1, source.length());
   memcpy(ctx->source, *source, source.length());
@@ -58,6 +56,13 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   }
   if (argc > 2) {
     ctx->fd = args[2]->Int32Value(context).ToChecked();
+  }
+  if (argc > 3) {
+    String::Utf8Value name(isolate, args[3]);
+    ctx->argv[0] = (char*)calloc(1, name.length());
+    memcpy(ctx->argv[0], *name, name.length());
+  } else {
+    ctx->argv[0] = "thread";
   }
   pthread_t tid;
 	int r = pthread_create(&tid, NULL, startThread, ctx);

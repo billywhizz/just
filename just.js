@@ -279,6 +279,12 @@ function main () {
   just.heapUsage = wrapHeapUsage(sys.heapUsage)
   just.path = pathMod
   just.createLoop = createLoop
+  if (just.workerSource) {
+    const source = just.workerSource
+    delete just.workerSource
+    vm.runScript(source, args[0])
+    return
+  }
   if (args.length === 1) {
     const buf = sys.calloc(1, 4096)
     const loop = createLoop()
@@ -306,10 +312,12 @@ function main () {
     }
     net.close(loop.fd)
     return
-  } else if (args[1] === '-e') {
+  }
+  if (args[1] === '-e') {
     vm.runScript(args[2], 'eval')
     return
-  } else if (args[1] === '--') {
+  }
+  if (args[1] === '--') {
     const buf = sys.calloc(1, 4096)
     const chunks = []
     let bytes = net.read(0, buf)
