@@ -296,6 +296,7 @@ function main () {
         net.write(1, buf, sys.writeString(buf, '> '))
       } catch (err) {
         net.write(1, buf, sys.writeString(buf, `${err.stack}\n`))
+        net.write(1, buf, sys.writeString(buf, '> '))
       }
     })
     net.write(1, buf, sys.writeString(buf, '> '))
@@ -303,9 +304,20 @@ function main () {
       loop.poll(10)
       sys.runMicroTasks()
     }
+    net.close(loop.fd)
     return
   } else if (args[1] === '-e') {
     vm.runScript(args[2], 'eval')
+    return
+  } else if (args[1] === '--') {
+    const buf = sys.calloc(1, 4096)
+    const chunks = []
+    let bytes = net.read(0, buf)
+    while (bytes > 0) {
+      chunks.push(sys.readString(buf, bytes))
+      bytes = net.read(0, buf)
+    }
+    vm.runScript(chunks.join(''), 'stdin')
     return
   }
   vm.runScript(fs.readFile(args[1]), args[1])
