@@ -66,14 +66,19 @@ function wrapHeapUsage (heapUsage) {
 function createLoop (nevents = 1024) {
   const {
     create, wait, control, EPOLL_CLOEXEC, EPOLL_CTL_ADD,
-    EPOLL_CTL_DEL, EPOLL_CTL_MOD, EPOLLIN, EPOLLOUT, EPOLLET 
+    EPOLL_CTL_DEL, EPOLL_CTL_MOD, EPOLLIN
   } = just.loop
   const evbuf = just.sys.calloc(nevents, 12)
   const events = new Uint32Array(evbuf)
   const loopfd = create(EPOLL_CLOEXEC)
   const handles = {}
-  function poll (timeout = -1) {
-    const r = wait(loopfd, evbuf, timeout)
+  function poll (timeout = -1, sigmask) {
+    let r = 0
+    if (sigmask) {
+      r = wait(loopfd, evbuf, timeout, sigmask)
+    } else {
+      r = wait(loopfd, evbuf, timeout)
+    }
     if (r > 0) {
       let off = 0
       for (let i = 0; i < r; i++) {

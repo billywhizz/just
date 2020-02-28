@@ -786,10 +786,6 @@ void Timer(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, fd));
 }
 
-void Signal(const FunctionCallbackInfo<Value> &args) {
-
-}
-
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> sys = ObjectTemplate::New(isolate);
   SET_METHOD(isolate, sys, "calloc", Calloc);
@@ -798,7 +794,6 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "fcntl", Fcntl);
   SET_METHOD(isolate, sys, "sleep", Sleep);
   SET_METHOD(isolate, sys, "timer", Timer);
-  SET_METHOD(isolate, sys, "signal", Signal);
   SET_METHOD(isolate, sys, "memoryUsage", MemoryUsage);
   SET_METHOD(isolate, sys, "heapUsage", HeapSpaceUsage);
   SET_METHOD(isolate, sys, "pid", PID);
@@ -1104,6 +1099,8 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, net, "SOMAXCONN", Integer::New(isolate, SOMAXCONN));
   SET_VALUE(isolate, net, "O_NONBLOCK", Integer::New(isolate, O_NONBLOCK));
   SET_VALUE(isolate, net, "EAGAIN", Integer::New(isolate, EAGAIN));
+  SET_VALUE(isolate, net, "EWOULDBLOCK", Integer::New(isolate, EWOULDBLOCK));
+  SET_VALUE(isolate, net, "EINTR", Integer::New(isolate, EINTR));
   SET_MODULE(isolate, target, "net", net);
 }
 
@@ -1323,6 +1320,14 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
   }
   struct epoll_event* events = (struct epoll_event*)backing->Data();
   int size = backing->ByteLength() / 12;
+  if (argc > 3) {
+    Local<ArrayBuffer> buf = args[3].As<ArrayBuffer>();
+    std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+    sigset_t* set = static_cast<sigset_t*>(backing->Data());
+    int r = epoll_pwait(loopfd, events, size, timeout, set);
+    args.GetReturnValue().Set(Integer::New(isolate, r));
+    return;
+  }
   int r = epoll_wait(loopfd, events, size, timeout);
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }

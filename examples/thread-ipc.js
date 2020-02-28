@@ -5,7 +5,7 @@ function ipcTest () {
   const { net, sys } = just
   const fd = just.fd
   const shared = just.buffer
-  const buf = sys.calloc(1, 4096)
+  const buf = new ArrayBuffer(4096)
   const u8 = new Uint8Array(shared)
   let bytes = net.recv(fd, buf)
   while (bytes > 0) {
@@ -18,9 +18,9 @@ function ipcTest () {
 
 const fds = []
 socketpair(AF_UNIX, SOCK_STREAM, fds)
-const shared = sys.calloc(1, 1024, true)
+const shared = new SharedArrayBuffer(1024)
 const u8 = new Uint8Array(shared)
-const buf = sys.calloc(1, 4096)
+const buf = new ArrayBuffer(4096)
 let source = ipcTest.toString()
 source = source.slice(source.indexOf('{') + 1, source.lastIndexOf('}')).trim()
 const threadName = `${path.join(sys.cwd(), args[1])}#ipcTest`
