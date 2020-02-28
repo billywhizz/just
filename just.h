@@ -16,7 +16,6 @@
 #include <sys/ioctl.h>
 #include <sys/un.h>
 #include <netinet/tcp.h>
-#include "builtins.h"
 
 #define JUST_MAX_HEADERS 16
 #define JUST_MICROS_PER_SEC 1e6
@@ -67,6 +66,7 @@ using v8::Platform;
 using v8::V8;
 using v8::BackingStore;
 using v8::BackingStoreDeleterCallback;
+using v8::SharedArrayBuffer;
 
 typedef void    (*InitModulesCallback) (Isolate*, Local<ObjectTemplate>);
 
@@ -411,6 +411,7 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   String::Utf8Value filePath(isolate, args[0]);
   String::Utf8Value cwd(isolate, args[1]);
   Local<Array> arguments = args[2].As<Array>();
+  // todo: allow passing in fds
   int fds[3];
   fds[0] = args[3]->IntegerValue(context).ToChecked();
   fds[1] = args[4]->IntegerValue(context).ToChecked();
@@ -649,11 +650,23 @@ void Calloc(const FunctionCallbackInfo<Value> &args) {
     size = args[1]->Uint32Value(context).ToChecked();
     chunk = calloc(count, size);
   }
-  std::unique_ptr<BackingStore> backing =
-      ArrayBuffer::NewBackingStore(chunk, count * size, FreeMemory, nullptr);
-  Local<ArrayBuffer> ab =
-      ArrayBuffer::New(isolate, std::move(backing));
-  args.GetReturnValue().Set(ab);
+  bool shared = false;
+  if (args.Length() > 2) {
+    shared = args[2]->BooleanValue(isolate);
+  }
+  if (shared) {
+    std::unique_ptr<BackingStore> backing =
+        SharedArrayBuffer::NewBackingStore(chunk, count * size, FreeMemory, nullptr);
+    Local<SharedArrayBuffer> ab =
+        SharedArrayBuffer::New(isolate, std::move(backing));
+    args.GetReturnValue().Set(ab);
+  } else {
+    std::unique_ptr<BackingStore> backing =
+        ArrayBuffer::NewBackingStore(chunk, count * size, FreeMemory, nullptr);
+    Local<ArrayBuffer> ab =
+        ArrayBuffer::New(isolate, std::move(backing));
+    args.GetReturnValue().Set(ab);
+  }
 }
 
 void ReadString(const FunctionCallbackInfo<Value> &args) {
@@ -1311,6 +1324,12 @@ void ReadFile(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(just::ReadFile(isolate, *fname).ToLocalChecked());
 }
 
+void Unlink(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  String::Utf8Value fname(isolate, args[0]);
+  args.GetReturnValue().Set(Integer::New(isolate, unlink(*fname)));
+}
+
 void Open(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
@@ -1339,6 +1358,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> fs = ObjectTemplate::New(isolate);
   SET_METHOD(isolate, fs, "readFile", just::fs::ReadFile);
   SET_METHOD(isolate, fs, "open", just::fs::Open);
+  SET_METHOD(isolate, fs, "unlink", just::fs::Unlink);
   SET_METHOD(isolate, fs, "ioctl", just::fs::Ioctl);
   SET_MODULE(isolate, target, "fs", fs);
 }
@@ -1367,7 +1387,17 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
 
 }
 
-int CreateIsolate(Platform* platform, int argc, char** argv, InitModulesCallback InitModules) {
+void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
+  vm::Init(isolate, just);
+  tty::Init(isolate, just);
+  fs::Init(isolate, just);
+  sys::Init(isolate, just);
+  http::Init(isolate, just);
+  net::Init(isolate, just);
+  loop::Init(isolate, just);
+}
+
+int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, const char* js, unsigned int js_len, struct iovec* buf, int fd) {
   uint64_t start = hrtime();
   Isolate::CreateParams create_params;
   int statusCode = 0;
@@ -1409,6 +1439,18 @@ int CreateIsolate(Platform* platform, int argc, char** argv, InitModulesCallback
         isolate, "just", 
         NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
     Local<Object> justInstance = Local<Object>::Cast(obj);
+    if (buf != NULL) {
+      std::unique_ptr<BackingStore> backing =
+          SharedArrayBuffer::NewBackingStore(buf->iov_base, buf->iov_len, just::sys::FreeMemory, nullptr);
+      Local<SharedArrayBuffer> ab =
+          SharedArrayBuffer::New(isolate, std::move(backing));
+      justInstance->Set(context, String::NewFromUtf8(isolate, "buffer", 
+        NewStringType::kNormal).ToLocalChecked(), ab).Check();
+    }
+    if (fd != 0) {
+      justInstance->Set(context, String::NewFromUtf8(isolate, "fd", 
+        NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, fd)).Check();
+    }
     justInstance->Set(context, String::NewFromUtf8(isolate, "args", 
       NewStringType::kNormal).ToLocalChecked(), arguments).Check();
 
@@ -1434,8 +1476,8 @@ int CreateIsolate(Platform* platform, int argc, char** argv, InitModulesCallback
     if (argc > 1) {
       base = ReadFile(isolate, argv[1]).ToLocalChecked();
     } else {
-      base = String::NewFromUtf8(isolate, just_js, NewStringType::kNormal, 
-        just_js_len).ToLocalChecked();
+      base = String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
+        js_len).ToLocalChecked();
     }
     ScriptCompiler::Source basescript(base, baseorigin);
     if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
@@ -1457,7 +1499,7 @@ int CreateIsolate(Platform* platform, int argc, char** argv, InitModulesCallback
       }
     }
 
-    v8::platform::PumpMessageLoop(platform, isolate);
+    //v8::platform::PumpMessageLoop(platform, isolate);
 
     Local<Value> func = globalInstance->Get(context, 
       String::NewFromUtf8(isolate, "onExit", 
@@ -1468,13 +1510,13 @@ int CreateIsolate(Platform* platform, int argc, char** argv, InitModulesCallback
       Local<Value> result = onExit->Call(context, globalInstance, 0, 
         argv).ToLocalChecked();
       statusCode = result->Uint32Value(context).ToChecked();
-      v8::platform::PumpMessageLoop(platform, isolate);
+      //v8::platform::PumpMessageLoop(platform, isolate);
     }
 
-    const double kLongIdlePauseInSeconds = 2.0;
+    //const double kLongIdlePauseInSeconds = 2.0;
     isolate->ContextDisposedNotification();
-    isolate->IdleNotificationDeadline(platform->MonotonicallyIncreasingTime() 
-      + kLongIdlePauseInSeconds);
+    //isolate->IdleNotificationDeadline(platform->MonotonicallyIncreasingTime() 
+    //  + kLongIdlePauseInSeconds);
     isolate->LowMemoryNotification();
     isolate->ClearKeptObjects();
     bool stop = false;

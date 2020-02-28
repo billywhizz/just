@@ -1,5 +1,5 @@
 function main () {
-  const { sys, net, loop } = just
+  const { sys, net, loop, fs } = just
   let rps = 0
   let conn = 0
   const BUFSIZE = 16384
@@ -16,6 +16,10 @@ function main () {
   }
 
   function onListenEvent (fd, event) {
+    if (event & EPOLLERR || event & EPOLLHUP) {
+      net.close(fd)
+      return
+    }
     const clientfd = net.accept(fd)
     handlers[clientfd] = onSocketEvent
     let flags = sys.fcntl(clientfd, sys.F_GETFL, 0)
@@ -61,8 +65,12 @@ function main () {
   handlers[timerfd] = onTimerEvent
   const sockfd = net.socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0)
   handlers[sockfd] = onListenEvent
-  let r = net.bind(sockfd, './unix.socket')
+  let r = fs.unlink('./unix.socket')
+  if (r !== 0) throw new Error(`unlink ${r} errno ${sys.errno()} : ${sys.strerror(sys.errno())}`)
+  r = net.bind(sockfd, './unix.socket')
+  if (r !== 0) throw new Error(`bind ${r} errno ${sys.errno()} : ${sys.strerror(sys.errno())}`)
   r = net.listen(sockfd, SOMAXCONN)
+  if (r !== 0) throw new Error(`listen ${r} errno ${sys.errno()} : ${sys.strerror(sys.errno())}`)
   r = loop.control(loopfd, EPOLL_CTL_ADD, sockfd, EPOLLIN)
   r = loop.control(loopfd, EPOLL_CTL_ADD, timerfd, EPOLLIN)
   r = loop.wait(loopfd, evbuf)

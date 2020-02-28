@@ -52,3 +52,14 @@ tcp http server using picohttpparser
 tcp http client using picohttpparser
 - 225k non pipelined rps with headers parsed
 - 130k non pipelined rps with headers fully converted to JS
+
+## thread.js
+
+- spawns and waits for as many threads as possible in a tight loop
+- processes event loop between runs
+
+## thread-ipc.js
+
+- spawns a thread with a shared buffer and a socketpair fd
+- sends data over the pipe to the thread
+- makes atomic reads and writes on the shared buffer

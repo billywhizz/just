@@ -1,20 +1,19 @@
 #include "just.h"
 #include "crypto.h"
+#include "thread.h"
+#include "builtins.h"
 
 namespace just {
 
+namespace embedder {
+
 void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
-  vm::Init(isolate, just);
-  tty::Init(isolate, just);
-  fs::Init(isolate, just);
-  sys::Init(isolate, just);
-  http::Init(isolate, just);
-  net::Init(isolate, just);
-  loop::Init(isolate, just);
+  just::InitModules(isolate, just);
   crypto::Init(isolate, just);
+  thread::Init(isolate, just);
 }
 
-int main(int argc, char** argv) {
+int Start(int argc, char** argv) {
   setvbuf(stdout, nullptr, _IONBF, 0);
   setvbuf(stderr, nullptr, _IONBF, 0);
   signal(SIGPIPE, SIG_IGN);
@@ -22,7 +21,7 @@ int main(int argc, char** argv) {
   v8::V8::InitializePlatform(platform.get());
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
-  just::CreateIsolate(platform.get(), argc, argv, InitModules);
+  just::CreateIsolate(argc, argv, InitModules, just_js, just_js_len, NULL, 0);
   v8::V8::Dispose();
   v8::V8::ShutdownPlatform();
   platform.reset();
@@ -31,6 +30,8 @@ int main(int argc, char** argv) {
 
 }
 
+}
+
 int main(int argc, char** argv) {
-  return just::main(argc, argv);
+  return just::embedder::Start(argc, argv);
 }
