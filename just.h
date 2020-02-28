@@ -10,12 +10,14 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/timerfd.h>
-#include <sys/resource.h> /* getrusage */
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/un.h>
 #include <netinet/tcp.h>
+#include <sys/utsname.h>
+#include <gnu/libc-version.h>
 
 #define JUST_MAX_HEADERS 16
 #define JUST_MICROS_PER_SEC 1e6
@@ -395,11 +397,10 @@ void WaitPID(const FunctionCallbackInfo<Value> &args) {
   Local<ArrayBuffer> ab = args[0].As<Int32Array>()->Buffer();
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
   int *fields = static_cast<int *>(backing->Data());
-  int pid = -1; // wait for any child process
+  int pid = -1;
   if (args.Length() > 1) {
     pid = args[0]->IntegerValue(context).ToChecked();
   }
-  // WNOHANG - don't wait/block if status not available
   fields[1] = waitpid(pid, &fields[0], WNOHANG); 
   args.GetReturnValue().Set(args[0]);
 }
@@ -411,7 +412,6 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   String::Utf8Value filePath(isolate, args[0]);
   String::Utf8Value cwd(isolate, args[1]);
   Local<Array> arguments = args[2].As<Array>();
-  // todo: allow passing in fds
   int fds[3];
   fds[0] = args[3]->IntegerValue(context).ToChecked();
   fds[1] = args[4]->IntegerValue(context).ToChecked();
@@ -422,9 +422,11 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   argv[0] = (char*)calloc(1, filePath.length());
   memcpy(argv[0], *filePath, filePath.length());
   for (int i = 0; i < len; i++) {
-    Local<String> val = arguments->Get(context, i).ToLocalChecked().As<v8::String>();
+    Local<String> val = 
+      arguments->Get(context, i).ToLocalChecked().As<v8::String>();
     argv[i + 1] = (char*)calloc(1, val->Length());
-    val->WriteUtf8(isolate, argv[i + 1], val->Length(), &written, v8::String::HINT_MANY_WRITES_EXPECTED | v8::String::NO_NULL_TERMINATION);
+    val->WriteUtf8(isolate, argv[i + 1], val->Length(), &written, 
+      v8::String::HINT_MANY_WRITES_EXPECTED | v8::String::NO_NULL_TERMINATION);
   }
   argv[len + 1] = NULL;
   pid_t pid = fork();
@@ -466,7 +468,6 @@ void HRTime(const FunctionCallbackInfo<Value> &args) {
 void RunMicroTasks(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   MicrotasksScope::PerformCheckpoint(isolate);
-  //isolate->RunMicrotasks();
 }
 
 void EnqueueMicrotask(const FunctionCallbackInfo<Value>& args) {
@@ -528,7 +529,8 @@ void StrError(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   int err = args[0]->IntegerValue(context).ToChecked();
-  args.GetReturnValue().Set(String::NewFromUtf8(isolate, strerror(err)).ToLocalChecked());
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, 
+    strerror(err)).ToLocalChecked());
 }
 
 void Sleep(const FunctionCallbackInfo<Value> &args) {
@@ -633,7 +635,6 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
 
 void FreeMemory(void* buf, size_t length, void* data) {
   fprintf(stderr, "free: %lu\n", length);
-  //free(buf);
 }
 
 void Calloc(const FunctionCallbackInfo<Value> &args) {
@@ -660,7 +661,8 @@ void Calloc(const FunctionCallbackInfo<Value> &args) {
   }
   if (shared) {
     std::unique_ptr<BackingStore> backing =
-        SharedArrayBuffer::NewBackingStore(chunk, count * size, FreeMemory, nullptr);
+        SharedArrayBuffer::NewBackingStore(chunk, count * size, 
+          FreeMemory, nullptr);
     Local<SharedArrayBuffer> ab =
         SharedArrayBuffer::New(isolate, std::move(backing));
     args.GetReturnValue().Set(ab);
@@ -754,13 +756,22 @@ void Timer(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  int fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+  int t1 = args[0]->Int32Value(context).ToChecked();
+  int t2 = args[1]->Int32Value(context).ToChecked();
+  int argc = args.Length();
+  clockid_t cid = CLOCK_MONOTONIC;
+  if (argc > 2) {
+    cid = (clockid_t)args[2]->Int32Value(context).ToChecked();
+  }
+  int flags = TFD_NONBLOCK | TFD_CLOEXEC;
+  if (argc > 3) {
+    flags = args[3]->Int32Value(context).ToChecked();
+  }
+  int fd = timerfd_create(cid, flags);
   if (fd == -1) {
     args.GetReturnValue().Set(Integer::New(isolate, fd));
     return;
   }
-  int t1 = args[0]->Int32Value(context).ToChecked();
-  int t2 = args[1]->Int32Value(context).ToChecked();
   struct itimerspec ts;
   ts.it_interval.tv_sec = t1 / 1000;
 	ts.it_interval.tv_nsec = t1 % 1000;
@@ -802,6 +813,9 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "exit", Exit);
   SET_METHOD(isolate, sys, "usleep", USleep);
   SET_METHOD(isolate, sys, "nanosleep", NanoSleep);
+  SET_VALUE(isolate, sys, "CLOCK_MONOTONIC", Integer::New(isolate, CLOCK_MONOTONIC));
+  SET_VALUE(isolate, sys, "TFD_NONBLOCK", Integer::New(isolate, TFD_NONBLOCK));
+  SET_VALUE(isolate, sys, "TFD_CLOEXEC", Integer::New(isolate, TFD_CLOEXEC));
   SET_VALUE(isolate, sys, "F_GETFL", Integer::New(isolate, F_GETFL));
   SET_VALUE(isolate, sys, "F_SETFL", Integer::New(isolate, F_SETFL));
   SET_MODULE(isolate, target, "sys", sys);
@@ -847,14 +861,18 @@ void GetSockName(const FunctionCallbackInfo<Value> &args) {
     char addr[INET_ADDRSTRLEN];
     socklen_t size = sizeof(address);
     inet_ntop(AF_INET, &address.sin_addr, addr, size);
-    answer->Set(context, 0, String::NewFromUtf8(isolate, addr, v8::NewStringType::kNormal, strlen(addr)).ToLocalChecked()).Check();
-    answer->Set(context, 1, Integer::New(isolate, ntohs(address.sin_port))).Check();
+    answer->Set(context, 0, String::NewFromUtf8(isolate, addr, 
+      v8::NewStringType::kNormal, strlen(addr)).ToLocalChecked()).Check();
+    answer->Set(context, 1, Integer::New(isolate, 
+      ntohs(address.sin_port))).Check();
     args.GetReturnValue().Set(answer);
   } else {
     struct sockaddr_un address;
     socklen_t namelen = (socklen_t)sizeof(address);
     getsockname(fd, (struct sockaddr*)&address, &namelen);
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, address.sun_path, v8::NewStringType::kNormal, strlen(address.sun_path)).ToLocalChecked());
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, 
+      address.sun_path, v8::NewStringType::kNormal, 
+      strlen(address.sun_path)).ToLocalChecked());
   }
 }
 
@@ -872,14 +890,18 @@ void GetPeerName(const FunctionCallbackInfo<Value> &args) {
     char addr[INET_ADDRSTRLEN];
     socklen_t size = sizeof(address);
     inet_ntop(AF_INET, &address.sin_addr, addr, size);
-    answer->Set(context, 0, String::NewFromUtf8(isolate, addr, v8::NewStringType::kNormal, strlen(addr)).ToLocalChecked()).Check();
-    answer->Set(context, 1, Integer::New(isolate, ntohs(address.sin_port))).Check();
+    answer->Set(context, 0, String::NewFromUtf8(isolate, addr, 
+      v8::NewStringType::kNormal, strlen(addr)).ToLocalChecked()).Check();
+    answer->Set(context, 1, Integer::New(isolate, 
+      ntohs(address.sin_port))).Check();
     args.GetReturnValue().Set(answer);
   } else {
     struct sockaddr_un address;
     socklen_t namelen = (socklen_t)sizeof(address);
     getpeername(fd, (struct sockaddr*)&address, &namelen);
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, address.sun_path, v8::NewStringType::kNormal, strlen(address.sun_path)).ToLocalChecked());
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, 
+      address.sun_path, v8::NewStringType::kNormal, 
+      strlen(address.sun_path)).ToLocalChecked());
   }
 }
 
@@ -1067,11 +1089,13 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, net, "AF_INET", Integer::New(isolate, AF_INET));
   SET_VALUE(isolate, net, "AF_UNIX", Integer::New(isolate, AF_UNIX));
   SET_VALUE(isolate, net, "SOCK_STREAM", Integer::New(isolate, SOCK_STREAM));
-  SET_VALUE(isolate, net, "SOCK_NONBLOCK", Integer::New(isolate, SOCK_NONBLOCK));
+  SET_VALUE(isolate, net, "SOCK_NONBLOCK", Integer::New(isolate, 
+    SOCK_NONBLOCK));
   SET_VALUE(isolate, net, "SOL_SOCKET", Integer::New(isolate, SOL_SOCKET));
   SET_VALUE(isolate, net, "SO_REUSEADDR", Integer::New(isolate, SO_REUSEADDR));
   SET_VALUE(isolate, net, "SO_REUSEPORT", Integer::New(isolate, SO_REUSEPORT));
-  SET_VALUE(isolate, net, "SO_INCOMING_CPU", Integer::New(isolate, SO_INCOMING_CPU));
+  SET_VALUE(isolate, net, "SO_INCOMING_CPU", Integer::New(isolate, 
+    SO_INCOMING_CPU));
   SET_VALUE(isolate, net, "IPPROTO_TCP", Integer::New(isolate, IPPROTO_TCP));
   SET_VALUE(isolate, net, "TCP_NODELAY", Integer::New(isolate, TCP_NODELAY));
   SET_VALUE(isolate, net, "SO_KEEPALIVE", Integer::New(isolate, SO_KEEPALIVE));
@@ -1186,8 +1210,9 @@ void GetResponse(const FunctionCallbackInfo<Value> &args) {
     "statusCode").ToLocalChecked(), Integer::New(isolate, 
     state.status)).Check();
   request->Set(context, String::NewFromUtf8(isolate, 
-    "statusMessage").ToLocalChecked(), String::NewFromUtf8(isolate, state.status_message, 
-    NewStringType::kNormal, state.status_message_len).ToLocalChecked()).Check();
+    "statusMessage").ToLocalChecked(), String::NewFromUtf8(isolate, 
+    state.status_message, NewStringType::kNormal, 
+    state.status_message_len).ToLocalChecked()).Check();
   Local<Object> headers = Object::New(isolate);
   for (size_t i = 0; i < state.num_headers; i++) {
     struct phr_header* h = &state.headers[i];
@@ -1305,17 +1330,23 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, loop, "control", EpollCtl);
   SET_METHOD(isolate, loop, "create", EpollCreate);
   SET_METHOD(isolate, loop, "wait", EpollWait);
-  SET_VALUE(isolate, loop, "EPOLL_CTL_ADD", Integer::New(isolate, EPOLL_CTL_ADD));
-  SET_VALUE(isolate, loop, "EPOLL_CTL_MOD", Integer::New(isolate, EPOLL_CTL_MOD));
-  SET_VALUE(isolate, loop, "EPOLL_CTL_DEL", Integer::New(isolate, EPOLL_CTL_DEL));
+  SET_VALUE(isolate, loop, "EPOLL_CTL_ADD", Integer::New(isolate, 
+    EPOLL_CTL_ADD));
+  SET_VALUE(isolate, loop, "EPOLL_CTL_MOD", Integer::New(isolate, 
+    EPOLL_CTL_MOD));
+  SET_VALUE(isolate, loop, "EPOLL_CTL_DEL", Integer::New(isolate, 
+    EPOLL_CTL_DEL));
   SET_VALUE(isolate, loop, "EPOLLET", Integer::New(isolate, EPOLLET));
   SET_VALUE(isolate, loop, "EPOLLIN", Integer::New(isolate, EPOLLIN));
   SET_VALUE(isolate, loop, "EPOLLOUT", Integer::New(isolate, EPOLLOUT));
   SET_VALUE(isolate, loop, "EPOLLERR", Integer::New(isolate, EPOLLERR));
   SET_VALUE(isolate, loop, "EPOLLHUP", Integer::New(isolate, EPOLLHUP));
-  SET_VALUE(isolate, loop, "EPOLLEXCLUSIVE", Integer::New(isolate, EPOLLEXCLUSIVE));
-  SET_VALUE(isolate, loop, "EPOLLONESHOT", Integer::New(isolate, EPOLLONESHOT));
-  SET_VALUE(isolate, loop, "EPOLL_CLOEXEC", Integer::New(isolate, EPOLL_CLOEXEC));
+  SET_VALUE(isolate, loop, "EPOLLEXCLUSIVE", Integer::New(isolate, 
+    EPOLLEXCLUSIVE));
+  SET_VALUE(isolate, loop, "EPOLLONESHOT", Integer::New(isolate, 
+    EPOLLONESHOT));
+  SET_VALUE(isolate, loop, "EPOLL_CLOEXEC", Integer::New(isolate, 
+    EPOLL_CLOEXEC));
   SET_MODULE(isolate, target, "loop", loop);
 }
 
@@ -1370,6 +1401,37 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
 
 }
 
+namespace versions {
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> versions = ObjectTemplate::New(isolate);
+  SET_VALUE(isolate, versions, "just", String::NewFromUtf8(isolate, 
+    "0.0.1").ToLocalChecked());
+  SET_VALUE(isolate, versions, "v8", String::NewFromUtf8(isolate, 
+    v8::V8::GetVersion()).ToLocalChecked());
+  SET_VALUE(isolate, versions, "glibc", String::NewFromUtf8(isolate, 
+    gnu_get_libc_version()).ToLocalChecked());
+  Local<ObjectTemplate> kernel = ObjectTemplate::New(isolate);
+  utsname kernel_rec;
+  int rc = uname(&kernel_rec);
+  if (rc == 0) {
+    kernel->Set(String::NewFromUtf8(isolate, "os", 
+      NewStringType::kNormal).ToLocalChecked(), String::NewFromUtf8(isolate, 
+      kernel_rec.sysname).ToLocalChecked());
+    kernel->Set(String::NewFromUtf8(isolate, "release", 
+      NewStringType::kNormal).ToLocalChecked(), String::NewFromUtf8(isolate, 
+      kernel_rec.release).ToLocalChecked());
+    kernel->Set(String::NewFromUtf8(isolate, "version", 
+      NewStringType::kNormal).ToLocalChecked(), String::NewFromUtf8(isolate, 
+      kernel_rec.version).ToLocalChecked());
+  }
+  versions->Set(String::NewFromUtf8(isolate, "kernel", 
+    NewStringType::kNormal).ToLocalChecked(), kernel);
+  SET_MODULE(isolate, target, "versions", versions);
+}
+
+}
+
 namespace tty {
 
 void TtyName(const FunctionCallbackInfo<Value> &args) {
@@ -1400,9 +1462,11 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   http::Init(isolate, just);
   net::Init(isolate, just);
   loop::Init(isolate, just);
+  versions::Init(isolate, just);
 }
 
-int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, const char* js, unsigned int js_len, struct iovec* buf, int fd) {
+int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, 
+  const char* js, unsigned int js_len, struct iovec* buf, int fd) {
   uint64_t start = hrtime();
   Isolate::CreateParams create_params;
   int statusCode = 0;
@@ -1446,7 +1510,8 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, const 
     Local<Object> justInstance = Local<Object>::Cast(obj);
     if (buf != NULL) {
       std::unique_ptr<BackingStore> backing =
-          SharedArrayBuffer::NewBackingStore(buf->iov_base, buf->iov_len, just::sys::FreeMemory, nullptr);
+          SharedArrayBuffer::NewBackingStore(buf->iov_base, buf->iov_len, 
+          just::sys::FreeMemory, nullptr);
       Local<SharedArrayBuffer> ab =
           SharedArrayBuffer::New(isolate, std::move(backing));
       justInstance->Set(context, String::NewFromUtf8(isolate, "buffer", 
@@ -1454,7 +1519,8 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, const 
     }
     if (fd != 0) {
       justInstance->Set(context, String::NewFromUtf8(isolate, "fd", 
-        NewStringType::kNormal).ToLocalChecked(), Integer::New(isolate, fd)).Check();
+        NewStringType::kNormal).ToLocalChecked(), 
+        Integer::New(isolate, fd)).Check();
     }
     justInstance->Set(context, String::NewFromUtf8(isolate, "args", 
       NewStringType::kNormal).ToLocalChecked(), arguments).Check();
@@ -1466,7 +1532,7 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, const 
     TryCatch try_catch(isolate);
     ScriptOrigin baseorigin(
       String::NewFromUtf8(isolate, scriptName, 
-        NewStringType::kNormal).ToLocalChecked(), // resource name
+      NewStringType::kNormal).ToLocalChecked(), // resource name
       Integer::New(isolate, 0), // line offset
       Integer::New(isolate, 0),  // column offset
       False(isolate), // is shared cross-origin
@@ -1504,8 +1570,6 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, const 
       }
     }
 
-    //v8::platform::PumpMessageLoop(platform, isolate);
-
     Local<Value> func = globalInstance->Get(context, 
       String::NewFromUtf8(isolate, "onExit", 
         NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
@@ -1515,13 +1579,9 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, const 
       Local<Value> result = onExit->Call(context, globalInstance, 0, 
         argv).ToLocalChecked();
       statusCode = result->Uint32Value(context).ToChecked();
-      //v8::platform::PumpMessageLoop(platform, isolate);
     }
 
-    //const double kLongIdlePauseInSeconds = 2.0;
     isolate->ContextDisposedNotification();
-    //isolate->IdleNotificationDeadline(platform->MonotonicallyIncreasingTime() 
-    //  + kLongIdlePauseInSeconds);
     isolate->LowMemoryNotification();
     isolate->ClearKeptObjects();
     bool stop = false;
