@@ -1,6 +1,7 @@
 function main () {
   const { sys, net, loop } = just
   let rps = 0
+  let conn = 0
   const BUFSIZE = 16384
   const EVENTS = 1024
   const { EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLLIN, EPOLLERR, EPOLLHUP } = loop
@@ -9,7 +10,7 @@ function main () {
 
   function onTimerEvent (fd, event) {
     const rss = sys.memoryUsage(mem)[0]
-    just.print(`rps ${rps} mem ${rss}`)
+    just.print(`rps ${rps} mem ${rss} conn ${conn}`)
     net.read(fd, tbuf)
     rps = 0
   }
@@ -21,11 +22,13 @@ function main () {
     flags |= O_NONBLOCK
     sys.fcntl(clientfd, sys.F_SETFL, flags)
     loop.control(loopfd, EPOLL_CTL_ADD, clientfd, EPOLLIN)
+    conn++
   }
 
   function onSocketEvent (fd, event) {
     if (event & EPOLLERR || event & EPOLLHUP) {
       net.close(fd)
+      conn--
       return
     }
     const bytes = net.recv(fd, rbuf)
@@ -39,10 +42,12 @@ function main () {
       if (errno !== net.EAGAIN) {
         just.print(`recv error: ${sys.strerror(errno)} (${errno})`)
         net.close(fd)
+        conn--
       }
       return
     }
     net.close(fd)
+    conn--
   }
 
   const mem = new Float64Array(16)
