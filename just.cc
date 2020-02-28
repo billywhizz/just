@@ -1,5 +1,4 @@
 #include "just.h"
-#include "crypto.h"
 #include "thread.h"
 
 namespace just {
@@ -10,7 +9,6 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   // initialize the core modules
   just::InitModules(isolate, just);
   // initialize your own modules
-  crypto::Init(isolate, just);
   thread::Init(isolate, just);
 }
 

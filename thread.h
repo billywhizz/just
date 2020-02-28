@@ -22,7 +22,6 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just);
 
 void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   just::InitModules(isolate, just);
-  crypto::Init(isolate, just);
   thread::Init(isolate, just);
 }
 
