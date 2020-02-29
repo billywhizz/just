@@ -47,10 +47,10 @@ function main () {
   }
 
   const mem = new Float64Array(16)
-  const rbuf = sys.calloc(BUFSIZE, 1)
+  const rbuf = new ArrayBuffer(BUFSIZE)
   const wbuf = sys.calloc(1, 'GET / HTTP/1.1\r\n\r\n')
-  const evbuf = sys.calloc(EVENTS, 12)
-  const tbuf = sys.calloc(1, 8)
+  const evbuf = new ArrayBuffer(EVENTS * 12)
+  const tbuf = new ArrayBuffer(8)
   const events = new Uint32Array(evbuf)
   const loopfd = loop.create(EPOLL_CLOEXEC)
 

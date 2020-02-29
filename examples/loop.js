@@ -3,7 +3,7 @@ function createLoop (nevents = 1024) {
     create, wait, control, EPOLL_CLOEXEC, EPOLL_CTL_ADD,
     EPOLL_CTL_DEL, EPOLL_CTL_MOD, EPOLLIN, EPOLLOUT, EPOLLET 
   } = just.loop
-  const evbuf = just.sys.calloc(nevents, 12)
+  const evbuf = new ArrayBuffer(nevents * 12)
   const events = new Uint32Array(evbuf)
   const loopfd = create(EPOLL_CLOEXEC)
   const handles = {}
@@ -50,7 +50,7 @@ function createLoop (nevents = 1024) {
 
 const { sys, net } = just
 const { EPOLLIN } = just.loop
-const tbuf = sys.calloc(1, 8)
+const tbuf = new ArrayBuffer(8)
 
 const loop = createLoop()
 

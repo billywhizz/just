@@ -2,6 +2,7 @@
 #include "thread.h"
 #include "signal.h"
 #include "udp.h"
+#include "http.h"
 
 namespace just {
 
@@ -11,6 +12,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   just::InitModules(isolate, just);
   thread::Init(isolate, just, InitModules);
   signals::Init(isolate, just);
+  http::Init(isolate, just);
   udp::Init(isolate, just);
 }
 

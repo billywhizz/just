@@ -22,8 +22,8 @@ function onDgramEvent (fd, event) {
 const buf = sys.calloc(1, '01234567890123456789012345678901234567890123456789')
 const timerfd = sys.timer(1000, 1000)
 handlers[timerfd] = onTimerEvent
-const tbuf = sys.calloc(1, 8)
-const evbuf = sys.calloc(EVENTS, 12)
+const tbuf = new ArrayBuffer(8)
+const evbuf = new ArrayBuffer(EVENTS * 12)
 const events = new Uint32Array(evbuf)
 const loopfd = loop.create(EPOLL_CLOEXEC)
 const sockfd = net.socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0)

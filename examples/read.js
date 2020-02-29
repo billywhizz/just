@@ -1,5 +1,4 @@
 const { print, net, sys, fs, args } = just
-const { calloc } = sys
 const { read, close } = net
 
 function wrapMemoryUsage (memoryUsage) {
@@ -23,7 +22,7 @@ const memoryUsage = wrapMemoryUsage(sys.memoryUsage)
 
 const fd = fs.open('/dev/zero')
 const BUFSIZE = 256 * 1024
-const buf = calloc(1, BUFSIZE)
+const buf = new ArrayBuffer(BUFSIZE)
 let r = 0
 let total = 0
 let bytes = 0

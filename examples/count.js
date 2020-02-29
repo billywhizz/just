@@ -1,5 +1,5 @@
 const { print, sys, net, loop } = just
-const { strerror, errno, fcntl, calloc, F_SETFL, F_GETFL } = sys
+const { strerror, errno, fcntl, F_SETFL, F_GETFL } = sys
 const { EPOLLERR, EPOLLHUP, EPOLLIN, EPOLL_CTL_ADD, EPOLL_CLOEXEC, create, control, wait } = loop
 const { close, read, EAGAIN, O_NONBLOCK } = net
 function onEvent (fd, event) {
@@ -29,8 +29,8 @@ const EVENTS = 1024
 let total = 0
 const stdin = 0
 let r = 0
-const rbuf = calloc(1, BUFSIZE)
-const evbuf = calloc(EVENTS, 12)
+const rbuf = new ArrayBuffer(BUFSIZE)
+const evbuf = new ArrayBuffer(EVENTS * 12)
 const events = new Uint32Array(evbuf)
 const loopfd = create(EPOLL_CLOEXEC)
 setFlag(stdin, O_NONBLOCK)

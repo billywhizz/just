@@ -1,7 +1,7 @@
 const { sys, net, http } = just
 const BUFSIZE = 16384
 const { SOCK_STREAM, AF_INET, SOL_SOCKET, IPPROTO_TCP, TCP_NODELAY, SO_KEEPALIVE } = net
-const rbuf = sys.calloc(BUFSIZE, 1)
+const rbuf = new ArrayBuffer(BUFSIZE)
 const wbuf = sys.calloc(1, 'GET / HTTP/1.1\r\n\r\n')
 const fd = net.socket(AF_INET, SOCK_STREAM, 0)
 net.connect(fd, '127.0.0.1', 3000)

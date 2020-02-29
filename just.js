@@ -68,7 +68,7 @@ function createLoop (nevents = 1024) {
     create, wait, control, EPOLL_CLOEXEC, EPOLL_CTL_ADD,
     EPOLL_CTL_DEL, EPOLL_CTL_MOD, EPOLLIN
   } = just.loop
-  const evbuf = just.sys.calloc(nevents, 12)
+  const evbuf = new ArrayBuffer(nevents * 12)
   const events = new Uint32Array(evbuf)
   const loopfd = create(EPOLL_CLOEXEC)
   const handles = {}
@@ -260,6 +260,7 @@ function wrapRequire (cache = {}, pathMod = pathModule()) {
     const { join, baseName } = pathMod
     let dirName = parent ? parent.dirName : baseName(join(sys.cwd(), just.args[1] || './'))
     const fileName = join(dirName, path)
+    if (cache[fileName]) return cache[fileName].exports
     dirName = baseName(fileName)
     const params = ['exports', 'require', 'module']
     const exports = {}
@@ -267,6 +268,7 @@ function wrapRequire (cache = {}, pathMod = pathModule()) {
     module.text = just.fs.readFile(fileName)
     const fun = just.vm.compile(module.text, fileName, params, [])
     module.function = fun
+    cache[fileName] = module
     fun.call(exports, exports, p => require(p, module), module)
     return module.exports
   }
@@ -291,7 +293,7 @@ function main () {
     return
   }
   if (args.length === 1) {
-    const buf = sys.calloc(1, 4096)
+    const buf = new ArrayBuffer(4096)
     const loop = createLoop()
     repl(loop, buf, expr => {
       try {
@@ -323,7 +325,7 @@ function main () {
     return
   }
   if (args[1] === '--') {
-    const buf = sys.calloc(1, 4096)
+    const buf = new ArrayBuffer(4096)
     const chunks = []
     let bytes = net.read(0, buf)
     while (bytes > 0) {

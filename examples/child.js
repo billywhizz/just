@@ -21,7 +21,7 @@ function readInput (fd) {
 const stdin = createPipe()
 const stdout = createPipe()
 const stderr = createPipe()
-const buf = sys.calloc(1, 16384)
+const buf = new ArrayBuffer(16 * 1024)
 
 const pid = sys.spawn(just.args[2] || '/bin/ls', sys.cwd(), just.args.length > 2 ? just.args.slice(3) : ['-lah'], stdin[1], stdout[1], stderr[1])
 
