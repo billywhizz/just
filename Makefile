@@ -1,6 +1,6 @@
 CC             = clang++
 C              = clang
-CCFLAGS        = -I./deps/v8/include -I./deps/picohttpparser -O3 -Wall -Wextra -flto -Wno-unused-parameter
+CCFLAGS        = -march=native -mtune=native -I./deps/v8/include -I./deps/picohttpparser -O3 -Wall -Wextra -flto -Wno-unused-parameter
 LDADD          = -s -static -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a picohttpparser.o just.o -Wl,--end-group
 CCFLAGSDBG     = -I./deps/v8/include -I./deps/picohttpparser -g -Wall -Wextra -flto -Wno-unused-parameter
 LDADDDBG       = -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a picohttpparser.o just.o -Wl,--end-group

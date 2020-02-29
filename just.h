@@ -259,8 +259,7 @@ void CompileScript(const FunctionCallbackInfo<Value> &args) {
   TryCatch try_catch(isolate);
   Local<String> source = args[0].As<String>();
   Local<String> path = args[1].As<String>();
-  Local<Array> params_buf;
-  params_buf = args[2].As<Array>();
+  Local<Array> params_buf = args[2].As<Array>();
   Local<Array> context_extensions_buf;
   context_extensions_buf = args[3].As<Array>();
   std::vector<Local<String>> params;
@@ -1086,6 +1085,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, net, "AF_INET", Integer::New(isolate, AF_INET));
   SET_VALUE(isolate, net, "AF_UNIX", Integer::New(isolate, AF_UNIX));
   SET_VALUE(isolate, net, "SOCK_STREAM", Integer::New(isolate, SOCK_STREAM));
+  SET_VALUE(isolate, net, "SOCK_DGRAM", Integer::New(isolate, SOCK_DGRAM));
   SET_VALUE(isolate, net, "SOCK_NONBLOCK", Integer::New(isolate, 
     SOCK_NONBLOCK));
   SET_VALUE(isolate, net, "SOL_SOCKET", Integer::New(isolate, SOL_SOCKET));
@@ -1313,13 +1313,13 @@ void EpollWait(const FunctionCallbackInfo<Value> &args) {
   int loopfd = args[0]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> buf = args[1].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  struct epoll_event* events = (struct epoll_event*)backing->Data();
+  int size = backing->ByteLength() / 12;
   int timeout = -1;
   int argc = args.Length();
   if (argc > 2) {
     timeout = args[2]->Int32Value(context).ToChecked();
   }
-  struct epoll_event* events = (struct epoll_event*)backing->Data();
-  int size = backing->ByteLength() / 12;
   if (argc > 3) {
     Local<ArrayBuffer> buf = args[3].As<ArrayBuffer>();
     std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
