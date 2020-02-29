@@ -7,21 +7,19 @@ const EVENTS = 1024
 const handlers = {}
 
 function onTimerEvent (fd, event) {
-  const r = sendmsg(sockfd, buf, '127.0.0.1', dest)
-  just.print(`sendmsg: ${r}`)
+  const bytes = sendmsg(sockfd, buf, '127.0.0.1', dest)
+  if (bytes <= 0) throw new Error(`sendmsg ${r} errno ${sys.errno()} : ${sys.strerror(sys.errno())}`)
   net.read(fd, tbuf)
 }
 
 function onDgramEvent (fd, event) {
-  just.print('hello')
-  const address = []
-  const r = recvmsg(fd, buf, address)
-  just.print(`recvmsg: ${r}`)
-  just.print(address[0])
-  just.print(address[1])
+  const answer = []
+  const bytes = recvmsg(fd, buf, answer)
+  const [address, port] = answer
+  just.print(`${bytes} from ${address}:${port}`)
 }
 
-const buf = sys.calloc(1, 'hello')
+const buf = sys.calloc(1, '01234567890123456789012345678901234567890123456789')
 const timerfd = sys.timer(1000, 1000)
 handlers[timerfd] = onTimerEvent
 const tbuf = sys.calloc(1, 8)

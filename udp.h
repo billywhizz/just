@@ -8,7 +8,6 @@ void RecvMsg(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
   args.GetReturnValue().Set(BigInt::New(isolate, 0));
-  int argc = args.Length();
   int fd = args[0]->Uint32Value(context).ToChecked();
   Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
@@ -34,7 +33,7 @@ void RecvMsg(const FunctionCallbackInfo<Value> &args) {
   }
   inet_ntop(AF_INET, &a4->sin_addr, ip, iplen);
   answer->Set(context, 0, String::NewFromUtf8(isolate, ip, 
-    v8::NewStringType::kNormal, iplen).ToLocalChecked()).Check();
+    v8::NewStringType::kNormal, strlen(ip)).ToLocalChecked()).Check();
   answer->Set(context, 1, Integer::New(isolate, ntohs(a4->sin_port))).Check();
   args.GetReturnValue().Set(Integer::New(isolate, bytes));
 }

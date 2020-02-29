@@ -22,7 +22,6 @@ void SignalFD(const FunctionCallbackInfo<Value> &args) {
 
 void SigEmptySet(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
-  Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
   sigset_t* set = static_cast<sigset_t*>(backing->Data());
@@ -46,9 +45,9 @@ void SigProcMask(const FunctionCallbackInfo<Value> &args) {
   }
   int r = 0;
   if (direction == 1) {
-    r = sigprocmask(action, NULL, set);
+    r = pthread_sigmask(action, NULL, set);
   } else {
-    r = sigprocmask(action, set, NULL);
+    r = pthread_sigmask(action, set, NULL);
   }
   if (r != 0) {
     args.GetReturnValue().Set(BigInt::New(isolate, r));
@@ -79,7 +78,6 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, module, "JUST_SIGLOAD", Integer::New(isolate, 0));
   SET_VALUE(isolate, module, "SIG_BLOCK", Integer::New(isolate, SIG_BLOCK));
   SET_VALUE(isolate, module, "SIG_SETMASK", Integer::New(isolate, SIG_SETMASK));
-
   SET_MODULE(isolate, target, "signal", module);
 }
 

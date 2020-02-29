@@ -483,6 +483,15 @@ void Exit(const FunctionCallbackInfo<Value>& args) {
   exit(status);
 }
 
+void Kill(const FunctionCallbackInfo<Value>& args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int pid = args[0]->Int32Value(context).ToChecked();
+  int signum = args[1]->Int32Value(context).ToChecked();
+  args.GetReturnValue().Set(Integer::New(isolate, kill(pid, signum)));
+}
+
 void CPUUsage(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -806,6 +815,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "runMicroTasks", RunMicroTasks);
   SET_METHOD(isolate, sys, "nextTick", EnqueueMicrotask);
   SET_METHOD(isolate, sys, "exit", Exit);
+  SET_METHOD(isolate, sys, "kill", Kill);
   SET_METHOD(isolate, sys, "usleep", USleep);
   SET_METHOD(isolate, sys, "nanosleep", NanoSleep);
   SET_VALUE(isolate, sys, "CLOCK_MONOTONIC", Integer::New(isolate, 
@@ -814,6 +824,11 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, sys, "TFD_CLOEXEC", Integer::New(isolate, TFD_CLOEXEC));
   SET_VALUE(isolate, sys, "F_GETFL", Integer::New(isolate, F_GETFL));
   SET_VALUE(isolate, sys, "F_SETFL", Integer::New(isolate, F_SETFL));
+
+  SET_VALUE(isolate, sys, "SIGTERM", Integer::New(isolate, SIGTERM));
+  SET_VALUE(isolate, sys, "SIGHUP", Integer::New(isolate, SIGHUP));
+  SET_VALUE(isolate, sys, "SIGUSR1", Integer::New(isolate, SIGUSR1));
+
   SET_MODULE(isolate, target, "sys", sys);
 
 }
@@ -1477,6 +1492,8 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
   uint64_t start = hrtime();
   Isolate::CreateParams create_params;
   int statusCode = 0;
+  // todo: use our own allocator for array buffers off the v8 heap
+  // then we don't need sys.calloc
   create_params.array_buffer_allocator = 
     ArrayBuffer::Allocator::NewDefaultAllocator();
   Isolate *isolate = Isolate::New(create_params);

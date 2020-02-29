@@ -79,3 +79,7 @@ tcp http client using picohttpparser
 ## udp.js
 
 - sending and receiving inet dgrams
+
+## signal.js
+
+- blocking and intercepting signals on the event loop
