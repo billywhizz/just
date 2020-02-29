@@ -1,6 +1,5 @@
 #include "just.h"
 #include "thread.h"
-#include "signal.h"
 #include "udp.h"
 
 namespace just {
@@ -10,7 +9,6 @@ namespace embedder {
 void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   just::InitModules(isolate, just);
   thread::Init(isolate, just, InitModules);
-  signals::Init(isolate, just);
   udp::Init(isolate, just);
 }
 
