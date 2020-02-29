@@ -18,6 +18,8 @@
 #include <netinet/tcp.h>
 #include <sys/utsname.h>
 #include <gnu/libc-version.h>
+#include <sys/signalfd.h>
+#include <signal.h>
 #include "builtins.h"
 
 #define JUST_MAX_HEADERS 16

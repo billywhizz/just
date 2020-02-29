@@ -52,7 +52,8 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
     ctx->argv[0] = (char*)calloc(1, name.length());
     memcpy(ctx->argv[0], *name, name.length());
   } else {
-    ctx->argv[0] = "thread";
+    ctx->argv[0] = (char*)calloc(1, 6);
+    strncpy(ctx->argv[0], "thread", 6);
   }
   pthread_t tid;
 	int r = pthread_create(&tid, NULL, startThread, ctx);

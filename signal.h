@@ -1,6 +1,4 @@
 #include "just.h"
-#include <sys/signalfd.h>
-#include <signal.h>
 
 namespace just {
 

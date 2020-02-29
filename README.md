@@ -2,6 +2,30 @@
 
 A v8 javascript runtime for linux that aims to be small, fast and simple to understand
 
+## Key Points and Goals
+
+- currently only tested and building on x64/ubuntu 18.04 or debian:stretch docker image
+- static binary that should run on most modern linuxes. tested on
+  - alpine 3.10, 3.11
+  - debain:stretch
+  - ubuntu 18.04
+- no shared library support. all binary dependencies must be baked in at compile time
+- commonjs require support for js only
+- 13 MB binary
+- 8-9 MB RSS usage on startup
+- 12-13 MB RSS usage under heavy load on minimal network server
+- minimal heap allocations. standard library should not cause gc
+
+## Files
+
+### just.cc
+
+main entry point for building the runtime. embedders can roll their own and include just.h
+
+### just.h
+
+the just runtime as a single header. any non-essential apis are in separate modules
+
 ## Line Count
 
 ```

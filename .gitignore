@@ -11,3 +11,5 @@ scratch
 *.socket
 *.sock
 out
+deps/v8/third_party
+deps/v8/testing
