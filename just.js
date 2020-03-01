@@ -343,7 +343,7 @@ function main () {
     return
   }
   // run a script from the filesystem
-  vm.runScript(fs.readFile(args[1]), args[1])
+  vm.runScript(fs.readFile(args[1]), pathMod.join(sys.cwd(), args[1]))
 }
 
 main()

@@ -13,24 +13,14 @@ function DebuggerAgent () {
   function onIPCData (fd, event) {
     if (event & EPOLLIN) {
       const bytes = net.read(fd, rbuf)
-      ipcParser.execute(rbuf, bytes, message => {
-        const buf = ws.createMessage(message)
-        net.send(clientfd, buf)
-      })
+      ipcParser.execute(rbuf, bytes, message => net.send(clientfd, ws.createMessage(message)))
     }
-  }
-
-  function onTimerEvent (fd, event) {
-    just.print(just.memoryUsage().rss)
-    net.read(fd, tbuf)
   }
 
   function onListenEvent (fd, event) {
     const clientfd = net.accept(fd)
     net.setsockopt(clientfd, IPPROTO_TCP, TCP_NODELAY, 1)
     net.setsockopt(clientfd, SOL_SOCKET, SO_KEEPALIVE, 1)
-    //const la = net.getsockname(clientfd, AF_INET, [])
-    //const ra = net.getpeername(clientfd, AF_INET, [])
     handlers[clientfd] = onSocketEvent
     let flags = sys.fcntl(clientfd, sys.F_GETFL, 0)
     flags |= O_NONBLOCK
@@ -82,7 +72,6 @@ function DebuggerAgent () {
       const payload = chunks.join('')
       const ab = new ArrayBuffer(payload.length + 1)
       ab.writeString(payload)
-      just.print(payload)
       net.send(ipcfd, ab)
       chunks.length = 0
     }
@@ -133,9 +122,9 @@ function DebuggerAgent () {
       devtoolsFrontendUrlCompat: `chrome-devtools://devtools/bundled/inspector.html?experiments=true&v8only=true&ws=127.0.0.1:9222/${sessionId}`,
       faviconUrl: 'https://nodejs.org/static/favicon.ico',
       id: sessionId,
-      title: `node[${sys.pid()}]`,
+      title: 'debug.js',
       type: 'node',
-      url: 'file://',
+      url: `file://${just.sys.cwd()}/debug.js`,
       webSocketDebuggerUrl: `ws://127.0.0.1:9222/${sessionId}`
     }])
     res.push(`Content-Length: ${payload.length}`)
@@ -164,7 +153,7 @@ function DebuggerAgent () {
           return
         }
         request.fd = fd
-        if (request.url === '/json') {
+        if (request.url === '/json' || request.url === '/json/list') {
           net.send(fd, wbuf, sys.writeString(wbuf, getJSON()))
           return
         }
@@ -177,6 +166,8 @@ function DebuggerAgent () {
           return
         }
         net.send(fd, wbuf, sys.writeString(wbuf, getNotFound()))
+      } else {
+        just.print('OHNO!')
       }
       return
     }
@@ -196,11 +187,8 @@ function DebuggerAgent () {
   const rbuf = new ArrayBuffer(BUFSIZE)
   const wbuf = new ArrayBuffer(BUFSIZE)
   const evbuf = new ArrayBuffer(EVENTS * 12)
-  const tbuf = new ArrayBuffer(8)
   const events = new Uint32Array(evbuf)
   const loopfd = loop.create(EPOLL_CLOEXEC)
-  const timerfd = sys.timer(1000, 1000)
-  handlers[timerfd] = onTimerEvent
   const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
   const ipcfd = just.fd
   handlers[sockfd] = onListenEvent
@@ -211,7 +199,6 @@ function DebuggerAgent () {
   r = net.listen(sockfd, SOMAXCONN)
   r = loop.control(loopfd, EPOLL_CTL_ADD, ipcfd, EPOLLIN)
   r = loop.control(loopfd, EPOLL_CTL_ADD, sockfd, EPOLLIN)
-  r = loop.control(loopfd, EPOLL_CTL_ADD, timerfd, EPOLLIN)
   r = loop.wait(loopfd, evbuf)
   while (r > 0) {
     let off = 0
@@ -224,60 +211,63 @@ function DebuggerAgent () {
   }
 }
 
-const { sys, net } = just
-const { EPOLLIN } = just.loop
-const ipc = just.require('./ipc.js')
-
-just.inspector.enable()
-
-let source = DebuggerAgent.toString()
-source = source.slice(source.indexOf('{') + 1, source.lastIndexOf('}')).trim()
-const fds = []
-net.socketpair(net.AF_UNIX, net.SOCK_STREAM, fds)
-const shared = new SharedArrayBuffer(1024)
-const threadName = `${just.path.join(sys.cwd(), just.args[1])}#DebuggerAgent`
-const ipcfd = fds[0]
-const tid = just.thread.spawn(source, shared, fds[1], threadName)
-
-global.receive = message => {
-  const ab = new ArrayBuffer(message.length + 1)
-  ab.writeString(message)
-  net.send(ipcfd, ab)
-}
-
-global.onRunMessageLoop = () => {
-  just.print('onRunMessageLoop')
-}
-
-global.onQuitMessageLoop = () => {
-  just.print('onQuitMessageLoop')
-}
-
-const BUFSIZE = 1 * 1024 * 1024
-const rbuf = new ArrayBuffer(BUFSIZE)
-const tbuf = new ArrayBuffer(8)
-const loop = just.createLoop(4)
-const timerfd = sys.timer(1000, 1000)
-const ipcParser = new ipc.Parser()
-
-loop.add(timerfd, (fd, event) => {
-  if (event & EPOLLIN) {
-    net.read(fd, tbuf)
+function createInspector (loop, onReady) {
+  const { sys, net } = just
+  const { EPOLLIN } = just.loop
+  const ipc = just.require('./ipc.js')
+  just.inspector.enable()
+  let source = DebuggerAgent.toString()
+  source = source.slice(source.indexOf('{') + 1, source.lastIndexOf('}')).trim()
+  const fds = []
+  net.socketpair(net.AF_UNIX, net.SOCK_STREAM, fds)
+  const shared = new SharedArrayBuffer(1024)
+  const threadName = `${just.path.join(sys.cwd(), just.args[1])}#DebuggerAgent`
+  const ipcfd = fds[0]
+  let paused = false
+  just.thread.spawn(source, shared, fds[1], threadName)
+  global.receive = message => {
+    const ab = new ArrayBuffer(message.length + 1)
+    ab.writeString(message)
+    net.send(ipcfd, ab)
   }
-})
-
-loop.add(ipcfd, (fd, event) => {
-  if (event & EPOLLIN) {
-    const bytes = net.read(fd, rbuf)
-    ipcParser.execute(rbuf, bytes, message => {
-      global.send(message)
-    })
+  global.onRunMessageLoop = () => {
+    paused = true
+    while (paused) {
+      loop.poll(1)
+      just.sys.runMicroTasks()
+    }
   }
-})
-
-while (loop.count > 0) {
-  loop.poll()
-  sys.runMicroTasks()
+  global.onQuitMessageLoop = () => {
+    paused = false
+  }
+  const BUFSIZE = 1 * 1024 * 1024
+  const rbuf = new ArrayBuffer(BUFSIZE)
+  const ipcParser = new ipc.Parser()
+  loop.add(ipcfd, (fd, event) => {
+    if (event & EPOLLIN) {
+      const bytes = net.read(fd, rbuf)
+      ipcParser.execute(rbuf, bytes, message => {
+        const json = JSON.parse(message)
+        if (json.method === 'Runtime.runIfWaitingForDebugger') {
+          onReady()
+        }
+        global.send(message)
+      })
+    }
+  })
+  while (loop.count > 0) {
+    if (paused) {
+      just.usleep(1000)
+    } else {
+      loop.poll(1)
+    }
+    just.sys.runMicroTasks()
+  }
 }
 
-net.close(loop.fd)
+const loop = just.createLoop(128)
+createInspector(loop, () => {
+  just.print('debugger ready')
+  const { args, fs, path, sys } = just
+  just.vm.runScript(fs.readFile(args[2]), path.join(sys.cwd(), args[2]))
+})
