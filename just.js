@@ -113,17 +113,11 @@ function createLoop (nevents = 1024) {
   return instance
 }
 
-function setFlag (fd, flag) {
-  let flags = sys.fcntl(fd, sys.F_GETFL, 0)
-  flags |= flag
-  return sys.fcntl(fd, sys.F_SETFL, flags)
-}
-
 function repl (loop, buf, onExpression) {
   const { EPOLLIN } = just.loop
   const { O_NONBLOCK, EAGAIN } = just.net
   const stdin = 0
-  setFlag(stdin, O_NONBLOCK)
+  sys.fcntl(stdin, sys.F_SETFL, (sys.fcntl(stdin, sys.F_GETFL, 0) | O_NONBLOCK))
   loop.add(stdin, (fd, event) => {
     if (event & EPOLLIN) {
       const bytes = net.read(fd, buf)
@@ -286,12 +280,16 @@ function main () {
   just.heapUsage = wrapHeapUsage(sys.heapUsage)
   just.path = pathMod
   just.createLoop = createLoop
+  // we are in a thread
   if (just.workerSource) {
     const source = just.workerSource
     delete just.workerSource
+    // script name is passed as args[0] from the runtime when we are running
+    // a thread
     vm.runScript(source, args[0])
     return
   }
+  // no args passed - run a repl
   if (args.length === 1) {
     const buf = new ArrayBuffer(4096)
     const loop = createLoop()
@@ -306,13 +304,13 @@ function main () {
         if (result) {
           net.write(1, buf, sys.writeString(buf, `${stringify(result, 2)}\n`))
         }
-        net.write(1, buf, sys.writeString(buf, '> '))
+        net.write(1, buf, sys.writeString(buf, '\x1B[32m>\x1B[0m '))
       } catch (err) {
         net.write(1, buf, sys.writeString(buf, `${err.stack}\n`))
-        net.write(1, buf, sys.writeString(buf, '> '))
+        net.write(1, buf, sys.writeString(buf, '\x1B[32m>\x1B[0m '))
       }
     })
-    net.write(1, buf, sys.writeString(buf, '> '))
+    net.write(1, buf, sys.writeString(buf, '\x1B[32m>\x1B[0m '))
     while (loop.count > 0) {
       loop.poll(10)
       sys.runMicroTasks()
@@ -320,10 +318,12 @@ function main () {
     net.close(loop.fd)
     return
   }
+  // evaluate script from args
   if (args[1] === '-e') {
     vm.runScript(args[2], 'eval')
     return
   }
+  // evaluate script piped to stdin
   if (args[1] === '--') {
     const buf = new ArrayBuffer(4096)
     const chunks = []
@@ -335,6 +335,7 @@ function main () {
     vm.runScript(chunks.join(''), 'stdin')
     return
   }
+  // run a script from the filesystem
   vm.runScript(fs.readFile(args[1]), args[1])
 }
 
