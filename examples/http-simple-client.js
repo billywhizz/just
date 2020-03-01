@@ -7,8 +7,8 @@ const fd = net.socket(AF_INET, SOCK_STREAM, 0)
 net.connect(fd, '127.0.0.1', 3000)
 net.setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, 1)
 net.setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, 1)
-const la = net.getsockname(fd, AF_INET, []);
-const ra = net.getpeername(fd, AF_INET, []);
+const la = net.getsockname(fd, AF_INET, [])
+const ra = net.getpeername(fd, AF_INET, [])
 just.print(JSON.stringify(la))
 just.print(JSON.stringify(ra))
 net.send(fd, wbuf)

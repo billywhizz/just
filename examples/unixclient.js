@@ -20,7 +20,7 @@ function main () {
       r = loop.control(loopfd, EPOLL_CTL_MOD, fd, EPOLLIN)
       net.send(fd, wbuf)
       conn++
-      return;
+      return
     }
     if (event & EPOLLERR || event & EPOLLHUP) {
       net.close(fd)

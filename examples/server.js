@@ -19,8 +19,8 @@ function main () {
     const clientfd = net.accept(fd)
     net.setsockopt(clientfd, IPPROTO_TCP, TCP_NODELAY, 1)
     net.setsockopt(clientfd, SOL_SOCKET, SO_KEEPALIVE, 1)
-    const la = net.getsockname(clientfd, AF_INET, []);
-    const ra = net.getpeername(clientfd, AF_INET, []);
+    const la = net.getsockname(clientfd, AF_INET, [])
+    const ra = net.getpeername(clientfd, AF_INET, [])
     just.print(JSON.stringify(la))
     just.print(JSON.stringify(ra))
     handlers[clientfd] = onSocketEvent

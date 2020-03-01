@@ -3,6 +3,7 @@
 #include "signal.h"
 #include "udp.h"
 #include "http.h"
+#include "inspector.h"
 
 namespace just {
 
@@ -14,6 +15,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   signals::Init(isolate, just);
   http::Init(isolate, just);
   udp::Init(isolate, just);
+  inspector::Init(isolate, just);
 }
 
 int Start(int argc, char** argv) {

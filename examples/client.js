@@ -19,14 +19,14 @@ function main () {
     if (event & EPOLLOUT) {
       net.setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, 1)
       net.setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, 1)
-      const la = net.getsockname(fd, AF_INET, []);
-      const ra = net.getpeername(fd, AF_INET, []);
+      const la = net.getsockname(fd, AF_INET, [])
+      const ra = net.getpeername(fd, AF_INET, [])
       just.print(JSON.stringify(la))
       just.print(JSON.stringify(ra))
       r = loop.control(loopfd, EPOLL_CTL_MOD, fd, EPOLLIN)
       net.send(fd, wbuf)
       conn++
-      return;
+      return
     }
     if (event & EPOLLERR || event & EPOLLHUP) {
       net.close(fd)

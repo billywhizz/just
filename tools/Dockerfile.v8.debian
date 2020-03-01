@@ -27,7 +27,6 @@ RUN ./tools/dev/v8gen.py \
 	use_custom_libcxx=false \
 	use_sysroot=false \
 	use_gold=false \
-	use_allocator_shim=false \
 	treat_warnings_as_errors=false \
 	strip_debug_info=true \
 	is_desktop_linux=false \
