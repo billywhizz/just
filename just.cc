@@ -5,6 +5,7 @@
 #include "http.h"
 #include "inspector.h"
 #include "crypto.h"
+#include "encode.h"
 
 namespace just {
 
@@ -18,6 +19,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   udp::Init(isolate, just);
   inspector::Init(isolate, just);
   crypto::Init(isolate, just);
+  encode::Init(isolate, just);
 }
 
 int Start(int argc, char** argv) {

@@ -74,6 +74,7 @@ class InspectorClient : public V8InspectorClient {
     session_ = inspector_->connect(1, channel_.get(), StringView());
     context->SetAlignedPointerInEmbedderData(kInspectorClientIndex, this);
     inspector_->contextCreated(V8ContextInfo(context, kContextGroupId, StringView()));
+
     Local<Value> function = FunctionTemplate::New(isolate_, SendInspectorMessage)->GetFunction(context).ToLocalChecked();
     Local<String> function_name = String::NewFromUtf8(isolate_, "send", NewStringType::kNormal).ToLocalChecked();
     context->Global()->Set(context, function_name, function).FromJust();
@@ -124,6 +125,7 @@ class InspectorClient : public V8InspectorClient {
     std::unique_ptr<uint16_t[]> buffer(new uint16_t[length]);
     message->Write(isolate, buffer.get(), 0, length);
     StringView message_view(buffer.get(), length);
+    //fprintf(stderr, "sessionId: %i\n", session->sessionId());
     session->dispatchProtocolMessage(message_view);
     args.GetReturnValue().Set(True(isolate));
   }
@@ -139,7 +141,8 @@ class InspectorClient : public V8InspectorClient {
 void Enable(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
-  InspectorClient inspector_client(context, true);
+  InspectorClient* client = new InspectorClient(context, true);
+  // inspector_client(context, true);
 }
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {

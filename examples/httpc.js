@@ -36,8 +36,6 @@ function main () {
     const bytes = net.recv(fd, rbuf)
     if (bytes > 0) {
       http.parseResponse(rbuf, bytes, 0)
-      //const response = http.getResponse()
-      //just.print(JSON.stringify(response, null, '  '))
       net.send(fd, wbuf)
       rps++
       return
@@ -57,7 +55,7 @@ function main () {
 
   const mem = new Float64Array(16)
   const rbuf = new ArrayBuffer(BUFSIZE)
-  const wbuf = sys.calloc(1, 'GET / HTTP/1.1\r\n\r\n')
+  const wbuf = ArrayBuffer.fromString('GET / HTTP/1.1\r\n\r\n')
   const evbuf = new ArrayBuffer(EVENTS * 12)
   const tbuf = new ArrayBuffer(8)
   const events = new Uint32Array(evbuf)

@@ -1,46 +1,52 @@
 #include "just.h"
+#include <mbedtls/md4.h>
+#include <mbedtls/md5.h>
+#include <mbedtls/ripemd160.h>
+#include <mbedtls/sha1.h>
+#include <mbedtls/sha256.h>
+#include <mbedtls/sha512.h>
+#include <mbedtls/md.h>
+#include <mbedtls/version.h>
 
 namespace just {
 
 namespace crypto {
 
-void RecvMsg(const FunctionCallbackInfo<Value> &args) {
+void Hash(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
-  args.GetReturnValue().Set(BigInt::New(isolate, 0));
-  int fd = args[0]->Uint32Value(context).ToChecked();
-  Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
-  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
-  Local<Array> answer = args[2].As<Array>();
-  struct iovec buf;
-  buf.iov_base = backing->Data();
-  buf.iov_len = backing->ByteLength();
-  char ip[INET_ADDRSTRLEN];
-  int iplen = sizeof ip;
-  struct sockaddr_storage peer;
-  struct msghdr h;
-  memset(&h, 0, sizeof(h));
-  memset(&peer, 0, sizeof(peer));
-  h.msg_name = &peer;
-  h.msg_namelen = sizeof(peer);
-  h.msg_iov = &buf;
-  h.msg_iovlen = 1;
-  const sockaddr_in *a4 = reinterpret_cast<const sockaddr_in *>(&peer);
-  int bytes = recvmsg(fd, &h, 0);
-  if (bytes <= 0) {
-    args.GetReturnValue().Set(BigInt::New(isolate, bytes));
-    return;
+  const mbedtls_md_info_t* algorithm = mbedtls_md_info_from_type((mbedtls_md_type_t)args[0]->Uint32Value(context).ToChecked());
+  Local<ArrayBuffer> absource = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> source = absource->GetBackingStore();
+  Local<ArrayBuffer> abdest = args[2].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> dest = abdest->GetBackingStore();
+  int len = source->ByteLength();
+  if (args.Length() > 3) {
+    len = args[3]->Uint32Value(context).ToChecked();
   }
-  inet_ntop(AF_INET, &a4->sin_addr, ip, iplen);
-  answer->Set(context, 0, String::NewFromUtf8(isolate, ip, 
-    v8::NewStringType::kNormal, strlen(ip)).ToLocalChecked()).Check();
-  answer->Set(context, 1, Integer::New(isolate, ntohs(a4->sin_port))).Check();
-  args.GetReturnValue().Set(Integer::New(isolate, bytes));
+  //todo: buffer overrun
+  int ret = mbedtls_md(algorithm, (const unsigned char*)source->Data(), len, (unsigned char*)dest->Data());
+  args.GetReturnValue().Set(Integer::New(isolate, ret));
 }
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
-  SET_METHOD(isolate, module, "recvmsg", RecvMsg);
+  char version_string[256];
+  mbedtls_version_get_string_full(version_string);
+  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, version_string).ToLocalChecked());
+
+  SET_VALUE(isolate, module, "NONE", Integer::New(isolate, MBEDTLS_MD_NONE));
+  SET_VALUE(isolate, module, "MD2", Integer::New(isolate, MBEDTLS_MD_MD2));
+  SET_VALUE(isolate, module, "MD4", Integer::New(isolate, MBEDTLS_MD_MD4));
+  SET_VALUE(isolate, module, "MD5", Integer::New(isolate, MBEDTLS_MD_MD5));
+  SET_VALUE(isolate, module, "SHA1", Integer::New(isolate, MBEDTLS_MD_SHA1));
+  SET_VALUE(isolate, module, "SHA224", Integer::New(isolate, MBEDTLS_MD_SHA224));
+  SET_VALUE(isolate, module, "SHA256", Integer::New(isolate, MBEDTLS_MD_SHA256));
+  SET_VALUE(isolate, module, "SHA384", Integer::New(isolate, MBEDTLS_MD_SHA384));
+  SET_VALUE(isolate, module, "SHA512", Integer::New(isolate, MBEDTLS_MD_SHA512));
+  SET_VALUE(isolate, module, "RIPEMD160", Integer::New(isolate, MBEDTLS_MD_RIPEMD160));
+
+  SET_METHOD(isolate, module, "hash", Hash);
   SET_MODULE(isolate, target, "crypto", module);
 }
 

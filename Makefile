@@ -16,15 +16,28 @@ builtins.h: just.js ## compile builtin js
 	sed -i 's/unsigned int/static unsigned int/g' builtins.h
 	sed -i 's/examples_//g' builtins.h
 
+mbedtls:
+	make -C deps/mbedtls/ lib
+
 runtime: builtins.h ## build runtime
 	$(C) -c $(CCFLAGS) -msse4 deps/picohttpparser/picohttpparser.c
 	$(CC) -c $(CCFLAGS) just.cc
 	$(CC) $(LDADD) -o just
 
+runtime-tls: builtins.h deps/mbedtls/library/libmbedcrypto.a ## build runtime
+	$(C) -c $(CCFLAGS) -msse4 deps/picohttpparser/picohttpparser.c
+	$(CC) -c $(CCFLAGS) -I./deps/mbedtls/include just.cc
+	$(CC) $(LDADD) deps/mbedtls/library/libmbedcrypto.a -o just
+
 runtime-debug: builtins.h ## build runtime debug version
 	$(C) -c $(CCFLAGSDBG) -msse4 deps/picohttpparser/picohttpparser.c
 	$(CC) -c $(CCFLAGSDBG) just.cc
 	$(CC) $(LDADDDBG) -o just
+
+runtime-tls-debug: builtins.h deps/mbedtls/library/libmbedcrypto.a ## build runtime
+	$(C) -c $(CCFLAGSDBG) -msse4 deps/picohttpparser/picohttpparser.c
+	$(CC) -c $(CCFLAGSDBG) -I./deps/mbedtls/include just.cc
+	$(CC) $(LDADDDBG) deps/mbedtls/library/libmbedcrypto.a -o just
 
 clean: ## tidy up
 	rm -f builtins.h

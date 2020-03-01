@@ -19,7 +19,7 @@ function onDgramEvent (fd, event) {
   just.print(`${bytes} from ${address}:${port}`)
 }
 
-const buf = sys.calloc(1, '01234567890123456789012345678901234567890123456789')
+const buf = ArrayBuffer.fromString('01234567890123456789012345678901234567890123456789')
 const timerfd = sys.timer(1000, 1000)
 handlers[timerfd] = onTimerEvent
 const tbuf = new ArrayBuffer(8)

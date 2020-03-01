@@ -2,14 +2,14 @@ const { net, sys, path, args } = just
 const { socketpair, AF_UNIX, SOCK_STREAM } = net
 
 function ipcTest () {
-  const { net, sys } = just
+  const { net } = just
   const fd = just.fd
   const shared = just.buffer
   const buf = new ArrayBuffer(4096)
   const u8 = new Uint8Array(shared)
   let bytes = net.recv(fd, buf)
   while (bytes > 0) {
-    just.print(sys.readString(buf, bytes))
+    just.print(buf.readString(bytes))
     just.print(Atomics.load(u8, 0))
     bytes = net.recv(fd, buf)
   }
@@ -27,7 +27,7 @@ const threadName = `${path.join(sys.cwd(), args[1])}#ipcTest`
 const tid = just.thread.spawn(source, shared, fds[1], threadName)
 let counter = 10
 do {
-  const len = sys.writeString(buf, `counter: ${counter}`)
+  const len = buf.writeString(`counter: ${counter}`)
   Atomics.store(u8, 0, counter)
   net.send(fds[0], buf, len)
   sys.sleep(1)

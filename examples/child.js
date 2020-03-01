@@ -12,7 +12,7 @@ function readInput (fd) {
   const chunks = []
   let bytes = net.recv(fd, buf)
   while (bytes > 0) {
-    chunks.push(sys.readString(buf, bytes))
+    chunks.push(buf.readString(bytes))
     bytes = net.recv(fd, buf)
   }
   return chunks.join('')

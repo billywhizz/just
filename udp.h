@@ -7,7 +7,6 @@ namespace udp {
 void RecvMsg(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
-  args.GetReturnValue().Set(BigInt::New(isolate, 0));
   int fd = args[0]->Uint32Value(context).ToChecked();
   Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
@@ -28,7 +27,7 @@ void RecvMsg(const FunctionCallbackInfo<Value> &args) {
   const sockaddr_in *a4 = reinterpret_cast<const sockaddr_in *>(&peer);
   int bytes = recvmsg(fd, &h, 0);
   if (bytes <= 0) {
-    args.GetReturnValue().Set(BigInt::New(isolate, bytes));
+    args.GetReturnValue().Set(Integer::New(isolate, bytes));
     return;
   }
   inet_ntop(AF_INET, &a4->sin_addr, ip, iplen);

@@ -129,7 +129,7 @@ function repl (loop, buf, onExpression) {
         }
         return
       }
-      onExpression(sys.readString(buf, bytes).trim())
+      onExpression(buf.readString(bytes).trim())
     }
   })
 }
@@ -280,6 +280,13 @@ function main () {
   just.heapUsage = wrapHeapUsage(sys.heapUsage)
   just.path = pathMod
   just.createLoop = createLoop
+  ArrayBuffer.prototype.writeString = function(str, off = 0) { // eslint-disable-line
+    return sys.writeString(this, str, off)
+  }
+  ArrayBuffer.prototype.readString = function (len, off) { // eslint-disable-line
+    return sys.readString(this, len, off)
+  }
+  ArrayBuffer.fromString = str => sys.calloc(1, str)
   // we are in a thread
   if (just.workerSource) {
     const source = just.workerSource
@@ -302,15 +309,15 @@ function main () {
         }
         const result = vm.runScript(expr, 'repl')
         if (result) {
-          net.write(1, buf, sys.writeString(buf, `${stringify(result, 2)}\n`))
+          net.write(1, buf, buf.writeString(`${stringify(result, 2)}\n`))
         }
-        net.write(1, buf, sys.writeString(buf, '\x1B[32m>\x1B[0m '))
+        net.write(1, buf, buf.writeString('\x1B[32m>\x1B[0m '))
       } catch (err) {
-        net.write(1, buf, sys.writeString(buf, `${err.stack}\n`))
-        net.write(1, buf, sys.writeString(buf, '\x1B[32m>\x1B[0m '))
+        net.write(1, buf, buf.writeString(`${err.stack}\n`))
+        net.write(1, buf, buf.writeString('\x1B[32m>\x1B[0m '))
       }
     })
-    net.write(1, buf, sys.writeString(buf, '\x1B[32m>\x1B[0m '))
+    net.write(1, buf, buf.writeString('\x1B[32m>\x1B[0m '))
     while (loop.count > 0) {
       loop.poll(10)
       sys.runMicroTasks()
@@ -329,7 +336,7 @@ function main () {
     const chunks = []
     let bytes = net.read(0, buf)
     while (bytes > 0) {
-      chunks.push(sys.readString(buf, bytes))
+      chunks.push(buf.readString(bytes))
       bytes = net.read(0, buf)
     }
     vm.runScript(chunks.join(''), 'stdin')
