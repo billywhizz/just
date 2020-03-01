@@ -4,6 +4,7 @@
 #include "udp.h"
 #include "http.h"
 #include "inspector.h"
+#include "crypto.h"
 
 namespace just {
 
@@ -16,6 +17,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   http::Init(isolate, just);
   udp::Init(isolate, just);
   inspector::Init(isolate, just);
+  crypto::Init(isolate, just);
 }
 
 int Start(int argc, char** argv) {
