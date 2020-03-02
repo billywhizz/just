@@ -1,31 +1,15 @@
-function DebuggerAgent () {
-  const { crypto, encode, sys, net, loop, http } = just
-  const ws = just.require('./websocket.js')
-  const ipc = just.require('./ipc.js')
-  const BUFSIZE = 1 * 1024 * 1024
-  const EVENTS = 128
-  const { EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLLIN, EPOLLERR, EPOLLHUP } = loop
-  const { SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_INET, SOCK_NONBLOCK, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, IPPROTO_TCP, TCP_NODELAY, SO_KEEPALIVE } = net
-  const handlers = {}
-  const ipcParser = new ipc.Parser()
-  let clientfd = 0
+const { factory } = just.require('./factory.js')
 
-  function onIPCData (fd, event) {
-    if (event & EPOLLIN) {
-      const bytes = net.read(fd, rbuf)
-      ipcParser.execute(rbuf, bytes, message => net.send(clientfd, ws.createMessage(message)))
-    }
-  }
-
+function createInspector (host = '127.0.0.1', port = 9222, onReady) {
   function onListenEvent (fd, event) {
     const clientfd = net.accept(fd)
     net.setsockopt(clientfd, IPPROTO_TCP, TCP_NODELAY, 1)
     net.setsockopt(clientfd, SOL_SOCKET, SO_KEEPALIVE, 1)
-    handlers[clientfd] = onSocketEvent
+    loop.add(clientfd, onSocketEvent)
     let flags = sys.fcntl(clientfd, sys.F_GETFL, 0)
     flags |= O_NONBLOCK
     sys.fcntl(clientfd, sys.F_SETFL, flags)
-    loop.control(loopfd, EPOLL_CTL_ADD, clientfd, EPOLLIN)
+    loop.update(clientfd, EPOLLIN)
   }
 
   function sha1 (str) {
@@ -37,10 +21,9 @@ function DebuggerAgent () {
     return sys.readString(source, b64Length)
   }
 
-  const websockets = {}
-
   function startWebSocket (request) {
     const { fd, url, headers } = request
+    just.print(`websocket started: ${fd}`)
     request.sessionId = url.slice(1)
     const key = headers['Sec-WebSocket-Key']
     const hash = sha1(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
@@ -69,11 +52,14 @@ function DebuggerAgent () {
       chunks.push(rbuf.readString(len, off))
     }
     parser.onMessage = header => {
-      const payload = chunks.join('')
-      const ab = new ArrayBuffer(payload.length + 1)
-      ab.writeString(payload)
-      net.send(ipcfd, ab)
+      const str = chunks.join('')
+      just.print(`client:\n${str}`)
+      global.send(str)
       chunks.length = 0
+      if (JSON.parse(str).method === 'Runtime.runIfWaitingForDebugger') {
+        onReady()
+        // this will block on the main event loop
+      }
     }
     request.onData = (off, len) => {
       const u8 = new Uint8Array(rbuf, off, len)
@@ -122,9 +108,9 @@ function DebuggerAgent () {
       devtoolsFrontendUrlCompat: `chrome-devtools://devtools/bundled/inspector.html?experiments=true&v8only=true&ws=127.0.0.1:9222/${sessionId}`,
       faviconUrl: 'https://nodejs.org/static/favicon.ico',
       id: sessionId,
-      title: 'debug.js',
+      title: just.args[2],
       type: 'node',
-      url: `file://${just.sys.cwd()}/debug.js`,
+      url: `file://${just.sys.cwd()}/${just.args[2]}`,
       webSocketDebuggerUrl: `ws://127.0.0.1:9222/${sessionId}`
     }])
     res.push(`Content-Length: ${payload.length}`)
@@ -135,6 +121,9 @@ function DebuggerAgent () {
 
   function onSocketEvent (fd, event) {
     if (event & EPOLLERR || event & EPOLLHUP) {
+      if (websockets[fd]) {
+        just.print(`websocket closing: ${fd}`)
+      }
       net.close(fd)
       delete websockets[fd]
       return
@@ -175,61 +164,26 @@ function DebuggerAgent () {
       const errno = sys.errno()
       if (errno !== net.EAGAIN) {
         just.print(`recv error: ${sys.strerror(errno)} (${errno})`)
+        if (websockets[fd]) {
+          just.print(`websocket closing: ${fd}`)
+        }
         net.close(fd)
         delete websockets[fd]
       }
       return
     }
+    if (websockets[fd]) {
+      just.print(`websocket closing: ${fd}`)
+    }
     net.close(fd)
     delete websockets[fd]
   }
 
-  const rbuf = new ArrayBuffer(BUFSIZE)
-  const wbuf = new ArrayBuffer(BUFSIZE)
-  const evbuf = new ArrayBuffer(EVENTS * 12)
-  const events = new Uint32Array(evbuf)
-  const loopfd = loop.create(EPOLL_CLOEXEC)
-  const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
-  const ipcfd = just.fd
-  handlers[sockfd] = onListenEvent
-  handlers[ipcfd] = onIPCData
-  let r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
-  r = net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
-  r = net.bind(sockfd, '127.0.0.1', 9222)
-  r = net.listen(sockfd, SOMAXCONN)
-  r = loop.control(loopfd, EPOLL_CTL_ADD, ipcfd, EPOLLIN)
-  r = loop.control(loopfd, EPOLL_CTL_ADD, sockfd, EPOLLIN)
-  r = loop.wait(loopfd, evbuf)
-  while (r > 0) {
-    let off = 0
-    for (let i = 0; i < r; i++) {
-      const fd = events[off + 1]
-      handlers[fd](fd, events[off])
-      off += 3
-    }
-    r = loop.wait(loopfd, evbuf)
-  }
-}
-
-function createInspector (loop, onReady) {
-  const { sys, net } = just
-  const { EPOLLIN } = just.loop
-  const ipc = just.require('./ipc.js')
-  just.inspector.enable()
-  let source = DebuggerAgent.toString()
-  source = source.slice(source.indexOf('{') + 1, source.lastIndexOf('}')).trim()
-  const fds = []
-  net.socketpair(net.AF_UNIX, net.SOCK_STREAM, fds)
-  const shared = new SharedArrayBuffer(1024)
-  const threadName = `${just.path.join(sys.cwd(), just.args[1])}#DebuggerAgent`
-  const ipcfd = fds[0]
-  let paused = false
-  just.thread.spawn(source, shared, fds[1], threadName)
   global.receive = message => {
-    const ab = new ArrayBuffer(message.length + 1)
-    ab.writeString(message)
-    net.send(ipcfd, ab)
+    just.print(`inspector:\n${message}`)
+    net.send(clientfd, ws.createMessage(message))
   }
+
   global.onRunMessageLoop = () => {
     paused = true
     while (paused) {
@@ -237,37 +191,33 @@ function createInspector (loop, onReady) {
       just.sys.runMicroTasks()
     }
   }
+
   global.onQuitMessageLoop = () => {
     paused = false
   }
+
+  just.inspector.enable()
+  const { crypto, encode, sys, net, http } = just
+  const ws = just.require('./websocket.js')
+  const websockets = {}
   const BUFSIZE = 1 * 1024 * 1024
+  const { EPOLLIN, EPOLLERR, EPOLLHUP } = just.loop
+  const { SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_INET, SOCK_NONBLOCK, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, IPPROTO_TCP, TCP_NODELAY, SO_KEEPALIVE } = net
+  let paused = false
+  let clientfd = 0
+  const loop = factory.create(128)
   const rbuf = new ArrayBuffer(BUFSIZE)
-  const ipcParser = new ipc.Parser()
-  loop.add(ipcfd, (fd, event) => {
-    if (event & EPOLLIN) {
-      const bytes = net.read(fd, rbuf)
-      ipcParser.execute(rbuf, bytes, message => {
-        const json = JSON.parse(message)
-        if (json.method === 'Runtime.runIfWaitingForDebugger') {
-          onReady()
-        }
-        global.send(message)
-      })
-    }
-  })
-  while (loop.count > 0) {
-    if (paused) {
-      just.usleep(1000)
-    } else {
-      loop.poll(1)
-    }
-    just.sys.runMicroTasks()
-  }
+  const wbuf = new ArrayBuffer(BUFSIZE)
+  const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
+  net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
+  net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
+  net.bind(sockfd, host, port)
+  net.listen(sockfd, SOMAXCONN)
+  loop.add(sockfd, onListenEvent)
 }
 
-const loop = just.createLoop(128)
-createInspector(loop, () => {
-  just.print('debugger ready')
-  const { args, fs, path, sys } = just
-  just.vm.runScript(fs.readFile(args[2]), path.join(sys.cwd(), args[2]))
+createInspector('127.0.0.1', 9222, () => {
+  just.vm.runScript(just.fs.readFile(just.args[2]), just.path.join(just.sys.cwd(), just.args[2]))
 })
+
+factory.run()

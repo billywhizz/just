@@ -282,20 +282,12 @@ void CompileScript(const FunctionCallbackInfo<Value> &args) {
   ScriptOrigin baseorigin(path, // resource name
     Integer::New(isolate, 0), // line offset
     Integer::New(isolate, 0),  // column offset
-    False(isolate), // is shared cross-origin
-    Local<Integer>(),  // script id
-    Local<Value>(), // source map url
-    False(isolate), // is opaque
-    False(isolate), // is wasm
-    False(isolate)); // is module
+    True(isolate));
   Context::Scope scope(context);
   ScriptCompiler::Source basescript(source, baseorigin);
-  Local<ScriptOrModule> script;
   MaybeLocal<Function> maybe_fn = ScriptCompiler::CompileFunctionInContext(
-    context, &basescript, params.size(), params.data(),
-    context_extensions.size(), context_extensions.data(), 
-    ScriptCompiler::kNoCompileOptions,
-    ScriptCompiler::NoCacheReason::kNoCacheNoReason, &script);
+    context, &basescript, params.size(), params.data(), 0, nullptr, 
+    ScriptCompiler::kEagerCompile);
   if (maybe_fn.IsEmpty()) {
     if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
       try_catch.ReThrow();
