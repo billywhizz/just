@@ -356,6 +356,7 @@ void RunScript(const FunctionCallbackInfo<Value> &args) {
   Local<Script> script;
   ScriptCompiler::Source basescript(source, baseorigin);
   if (!ScriptCompiler::Compile(context, &basescript).ToLocal(&script)) {
+    // todo: handle these errors properly - need to decide how best to
     PrintStackTrace(isolate, try_catch);
     return;
   }

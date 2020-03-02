@@ -113,6 +113,37 @@ function createLoop (nevents = 1024) {
   return instance
 }
 
+const factory = {
+  loops: [createLoop(1024)],
+  paused: true,
+  create: (nevents = 128) => {
+    const loop = createLoop(nevents)
+    factory.loops.push(loop)
+    return loop
+  },
+  run: (ms = 1) => {
+    factory.paused = false
+    while (!factory.paused) {
+      let total = 0
+      for (const loop of factory.loops) {
+        if (loop.count > 0) loop.poll(ms)
+        total += loop.count
+      }
+      sys.runMicroTasks()
+      if (total === 0) {
+        factory.paused = true
+        break
+      }
+    }
+  },
+  stop: () => {
+    factory.paused = true
+  },
+  shutdown: () => {
+
+  }
+}
+
 function repl (loop, buf, onExpression) {
   const { EPOLLIN } = just.loop
   const { O_NONBLOCK, EAGAIN } = just.net
@@ -563,7 +594,6 @@ function createInspector (host = '127.0.0.1', port = 9222, onReady) {
 
   function startWebSocket (request) {
     const { fd, url, headers } = request
-    just.print(`websocket started: ${fd}`)
     request.sessionId = url.slice(1)
     const key = headers['Sec-WebSocket-Key']
     const hash = sha1(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
@@ -593,17 +623,17 @@ function createInspector (host = '127.0.0.1', port = 9222, onReady) {
     }
     parser.onMessage = header => {
       const str = chunks.join('')
-      just.print(`client:\n${str}`)
       global.send(str)
       chunks.length = 0
       if (JSON.parse(str).method === 'Runtime.runIfWaitingForDebugger') {
         onReady()
         // this will block on the main event loop
+        // todo. won't this be a problem if we are in middle of a chunk
+        // of data?
       }
     }
     request.onData = (off, len) => {
-      const u8 = new Uint8Array(rbuf, off, len)
-      request.parser.execute(u8, 0, len)
+      request.parser.execute(new Uint8Array(rbuf, off, len), 0, len)
     }
     request.parser = parser
     clientfd = fd
@@ -661,9 +691,6 @@ function createInspector (host = '127.0.0.1', port = 9222, onReady) {
 
   function onSocketEvent (fd, event) {
     if (event & EPOLLERR || event & EPOLLHUP) {
-      if (websockets[fd]) {
-        just.print(`websocket closing: ${fd}`)
-      }
       net.close(fd)
       delete websockets[fd]
       return
@@ -704,23 +731,16 @@ function createInspector (host = '127.0.0.1', port = 9222, onReady) {
       const errno = sys.errno()
       if (errno !== net.EAGAIN) {
         just.print(`recv error: ${sys.strerror(errno)} (${errno})`)
-        if (websockets[fd]) {
-          just.print(`websocket closing: ${fd}`)
-        }
         net.close(fd)
         delete websockets[fd]
       }
       return
-    }
-    if (websockets[fd]) {
-      just.print(`websocket closing: ${fd}`)
     }
     net.close(fd)
     delete websockets[fd]
   }
 
   global.receive = message => {
-    just.print(`inspector:\n${message}`)
     net.send(clientfd, ws.createMessage(message))
   }
 
@@ -737,6 +757,7 @@ function createInspector (host = '127.0.0.1', port = 9222, onReady) {
   }
 
   just.inspector.enable()
+
   const { crypto, encode, sys, net, http } = just
   const ws = wsModule()
   const websockets = {}
@@ -754,11 +775,20 @@ function createInspector (host = '127.0.0.1', port = 9222, onReady) {
   net.bind(sockfd, host, port)
   net.listen(sockfd, SOMAXCONN)
   loop.add(sockfd, onListenEvent)
+  return {
+    loop,
+    sockfd,
+    info: () => {
+      return { paused }
+    }
+  }
 }
 
 function main () {
   const pathMod = pathModule()
   const stringify = (o, sp = '  ') => JSON.stringify(o, (k, v) => (typeof v === 'bigint') ? v.toString() : v, sp)
+  just.factory = factory
+  global.loop = factory.create(1024)
   just.memoryUsage = wrapMemoryUsage(sys.memoryUsage)
   just.cpuUsage = wrapCpuUsage(sys.cpuUsage)
   just.hrtime = wrapHrtime(sys.hrtime)
@@ -788,16 +818,16 @@ function main () {
     // script name is passed as args[0] from the runtime when we are running
     // a thread
     vm.runScript(source, args[0])
+    just.factory.run()
     return
   }
   // no args passed - run a repl
   if (args.length === 1) {
     const buf = new ArrayBuffer(4096)
-    const loop = createLoop()
-    repl(loop, buf, expr => {
+    repl(global.loop, buf, expr => {
       try {
         if (expr === '.exit') {
-          loop.remove(0)
+          global.loop.remove(0)
           net.close(0)
           return
         }
@@ -812,16 +842,13 @@ function main () {
       }
     })
     net.write(1, buf, buf.writeString('\x1B[32m>\x1B[0m '))
-    while (loop.count > 0) {
-      loop.poll(10)
-      sys.runMicroTasks()
-    }
-    net.close(loop.fd)
+    factory.run()
     return
   }
   // evaluate script from args
   if (args[1] === '-e') {
     vm.runScript(args[2], 'eval')
+    factory.run()
     return
   }
   // evaluate script piped to stdin
@@ -834,44 +861,12 @@ function main () {
       bytes = net.read(0, buf)
     }
     vm.runScript(chunks.join(''), 'stdin')
+    factory.run()
     return
   }
-
-  const factory = {
-    loops: [createLoop(1024)],
-    paused: true,
-    create: (nevents = 128) => {
-      const loop = createLoop(nevents)
-      factory.loops.push(loop)
-      return loop
-    },
-    run: (ms = 1) => {
-      factory.paused = false
-      while (!factory.paused) {
-        let total = 0
-        for (const loop of factory.loops) {
-          if (loop.count > 0) loop.poll(ms)
-          total += loop.count
-        }
-        sys.runMicroTasks()
-        if (total === 0) {
-          factory.paused = true
-          break
-        }
-      }
-    },
-    stop: () => {
-      factory.paused = true
-    },
-    shutdown: () => {
-
-    }
-  }
-  factory.default = global.loop = factory.loops[0]
-  just.factory = factory
   if (waitForInspector) {
-    just.print('waiting for inspector')
-    createInspector('127.0.0.1', 9222, () => {
+    just.print('waiting for inspector...')
+    global.inspector = createInspector('127.0.0.1', 9222, () => {
       vm.runScript(fs.readFile(args[1]), pathMod.join(sys.cwd(), args[1]))
     })
   } else {

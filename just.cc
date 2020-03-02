@@ -1,11 +1,12 @@
 #include "just.h"
-#include "thread.h"
-#include "signal.h"
-#include "udp.h"
-#include "http.h"
-#include "inspector.h"
-#include "crypto.h"
-#include "encode.h"
+#include "modules/thread.h"
+#include "modules/signal.h"
+#include "modules/udp.h"
+// need these four for inspector
+#include "modules/http.h"
+#include "modules/inspector.h"
+#include "modules/crypto.h"
+#include "modules/encode.h"
 
 namespace just {
 
@@ -15,8 +16,9 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   just::InitModules(isolate, just);
   thread::Init(isolate, just, InitModules);
   signals::Init(isolate, just);
-  http::Init(isolate, just);
   udp::Init(isolate, just);
+// need these four for inspector
+  http::Init(isolate, just);
   inspector::Init(isolate, just);
   crypto::Init(isolate, just);
   encode::Init(isolate, just);

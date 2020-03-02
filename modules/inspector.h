@@ -125,7 +125,6 @@ class InspectorClient : public V8InspectorClient {
     std::unique_ptr<uint16_t[]> buffer(new uint16_t[length]);
     message->Write(isolate, buffer.get(), 0, length);
     StringView message_view(buffer.get(), length);
-    //fprintf(stderr, "sessionId: %i\n", session->sessionId());
     session->dispatchProtocolMessage(message_view);
     args.GetReturnValue().Set(True(isolate));
   }
@@ -142,7 +141,6 @@ void Enable(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
   InspectorClient* client = new InspectorClient(context, true);
-  // inspector_client(context, true);
 }
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
