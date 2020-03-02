@@ -67,7 +67,7 @@ function main () {
   function client () {
     const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
     handlers[sockfd] = onConnectEvent
-    r = net.connect(sockfd, '127.0.0.1', 3000)
+    r = net.connect(sockfd, '127.0.0.1', parseInt(just.args[2] || '3000', 10))
     r = loop.control(loopfd, EPOLL_CTL_ADD, sockfd, EPOLLOUT)
   }
 
