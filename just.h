@@ -253,6 +253,16 @@ void Error(const FunctionCallbackInfo<Value> &args) {
 
 namespace vm {
 
+enum builtins
+{
+  INSPECTOR = 0,
+  LOOP,
+  PATH,
+  REPL,
+  REQUIRE,
+  WEBSOCKET
+};
+
 void CompileScript(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -337,6 +347,46 @@ void RunModule(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(result.ToLocalChecked());
 }
 
+void Builtin(const FunctionCallbackInfo<Value> &args) {
+  // todo: some weird bug here when i do "just.print(just.vm.INSPECTOR) 
+  // on a repl, i get a segfault from just.sys.writeString"
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int builtin = args[0]->Uint32Value(context).ToChecked();
+  if (builtin == builtins::INSPECTOR) {
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_inspector_js, 
+      NewStringType::kNormal, lib_inspector_js_len).ToLocalChecked());
+    return;
+  }
+  if (builtin == builtins::WEBSOCKET) {
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_websocket_js, 
+      NewStringType::kNormal, lib_websocket_js_len).ToLocalChecked());
+    return;
+  }
+  if (builtin == builtins::LOOP) {
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_loop_js, 
+      NewStringType::kNormal, lib_loop_js_len).ToLocalChecked());
+    return;
+  }
+  if (builtin == builtins::PATH) {
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_path_js, 
+      NewStringType::kNormal, lib_path_js_len).ToLocalChecked());
+    return;
+  }
+  if (builtin == builtins::REQUIRE) {
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_require_js, 
+      NewStringType::kNormal, lib_require_js_len).ToLocalChecked());
+    return;
+  }
+  if (builtin == builtins::REPL) {
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_repl_js, 
+      NewStringType::kNormal, lib_repl_js_len).ToLocalChecked());
+    return;
+  }
+  args.GetReturnValue().Set(Null(isolate));
+}
+
 void RunScript(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -377,6 +427,16 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, vm, "compile", just::vm::CompileScript);
   SET_METHOD(isolate, vm, "runModule", just::vm::RunModule);
   SET_METHOD(isolate, vm, "runScript", just::vm::RunScript);
+  SET_METHOD(isolate, vm, "builtin", just::vm::Builtin);
+  SET_VALUE(isolate, vm, "INSPECTOR", Integer::New(isolate, 
+    builtins::INSPECTOR));
+  SET_VALUE(isolate, vm, "LOOP", Integer::New(isolate, builtins::LOOP));
+  SET_VALUE(isolate, vm, "PATH", Integer::New(isolate, builtins::PATH));
+  SET_VALUE(isolate, vm, "REPL", Integer::New(isolate, builtins::REPL));
+  SET_VALUE(isolate, vm, "REQUIRE", Integer::New(isolate, 
+    builtins::REQUIRE));
+  SET_VALUE(isolate, vm, "WEBSOCKET", Integer::New(isolate, 
+    builtins::WEBSOCKET));
   SET_MODULE(isolate, target, "vm", vm);
 }
 
@@ -818,13 +878,15 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, sys, "TFD_CLOEXEC", Integer::New(isolate, TFD_CLOEXEC));
   SET_VALUE(isolate, sys, "F_GETFL", Integer::New(isolate, F_GETFL));
   SET_VALUE(isolate, sys, "F_SETFL", Integer::New(isolate, F_SETFL));
-
+  SET_VALUE(isolate, sys, "STDIN_FILENO", Integer::New(isolate, STDIN_FILENO));
+  SET_VALUE(isolate, sys, "STDOUT_FILENO", Integer::New(isolate, 
+    STDOUT_FILENO));
+  SET_VALUE(isolate, sys, "STDERR_FILENO", Integer::New(isolate, 
+    STDERR_FILENO));
   SET_VALUE(isolate, sys, "SIGTERM", Integer::New(isolate, SIGTERM));
   SET_VALUE(isolate, sys, "SIGHUP", Integer::New(isolate, SIGHUP));
   SET_VALUE(isolate, sys, "SIGUSR1", Integer::New(isolate, SIGUSR1));
-
   SET_MODULE(isolate, target, "sys", sys);
-
 }
 
 }

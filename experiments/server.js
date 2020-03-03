@@ -1,9 +1,9 @@
 function main () {
-  const { sys, net, loop } = just
+  const { sys, net } = just
   let rps = 0
   let conn = 0
   const BUFSIZE = 16384
-  const { EPOLLERR, EPOLLHUP } = loop
+  const { EPOLLERR, EPOLLHUP } = just.loop
   const { SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_INET, SOCK_NONBLOCK, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, IPPROTO_TCP, TCP_NODELAY, SO_KEEPALIVE } = net
 
   function onTimerEvent (fd, event) {
@@ -20,7 +20,7 @@ function main () {
     let flags = sys.fcntl(clientfd, sys.F_GETFL, 0)
     flags |= O_NONBLOCK
     sys.fcntl(clientfd, sys.F_SETFL, flags)
-    global.loop.add(clientfd, onSocketEvent)
+    loop.add(clientfd, onSocketEvent)
     conn++
   }
 
@@ -59,8 +59,8 @@ function main () {
   net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
   net.bind(sockfd, '127.0.0.1', 3000)
   net.listen(sockfd, SOMAXCONN)
-  global.loop.add(timerfd, onTimerEvent)
-  global.loop.add(sockfd, onListenEvent)
+  loop.add(timerfd, onTimerEvent)
+  loop.add(sockfd, onListenEvent)
 }
 
 main()

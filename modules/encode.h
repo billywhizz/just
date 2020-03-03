@@ -243,16 +243,6 @@ static size_t base64_encode(const char* src,
   return dlen;
 }
 
-enum encoding
-{
-  ASCII = 0,
-  UTF8 = 1,
-  HEX = 2,
-  BASE64 = 3,
-  BINARYSTRING = 4,
-  UCS2 = 5
-};
-
 void HexEncode(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
