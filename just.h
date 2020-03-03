@@ -710,7 +710,7 @@ void Memcpy(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
 
-  Local<ArrayBuffer> abdest = args[1].As<ArrayBuffer>();
+  Local<ArrayBuffer> abdest = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> bdest = abdest->GetBackingStore();
   char *dest = static_cast<char *>(bdest->Data());
   int dlen = bdest->ByteLength();
@@ -729,7 +729,12 @@ void Memcpy(const FunctionCallbackInfo<Value> &args) {
   if (argc > 3) {
     len = args[3]->Int32Value(context).ToChecked();
   }
+  int off2 = 0;
+  if (argc > 4) {
+    off2 = args[4]->Int32Value(context).ToChecked();
+  }
   dest = dest + off;
+  source = source + off2;
   memcpy(dest, source, len);
   args.GetReturnValue().Set(Integer::New(isolate, len));
 }
@@ -1126,14 +1131,20 @@ void Write(const FunctionCallbackInfo<Value> &args) {
   int fd = args[0]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  int argc = args.Length();
   int len = 0;
-  if (args.Length() > 2) {
+  if (argc > 2) {
     len = args[2]->Int32Value(context).ToChecked();
   } else {
     len = backing->ByteLength();
   }
+  int off = 0;
+  if (argc > 3) {
+    off = args[3]->Int32Value(context).ToChecked();
+  }
+  char* dest = (char*)backing->Data() + off;
   args.GetReturnValue().Set(Integer::New(isolate, write(fd, 
-    backing->Data(), len)));
+    dest, len)));
 }
 
 void Writev(const FunctionCallbackInfo<Value> &args) {
