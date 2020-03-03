@@ -5,6 +5,10 @@ const BUFSIZE = 65536
 let total = 0
 const stdin = 0
 const rbuf = new ArrayBuffer(BUFSIZE)
+function toGib (bytes) {
+  return Math.floor((bytes * 8) / (1000 * 1000 * 10)) / 100
+}
+const start = Date.now()
 while (1) {
   const bytes = read(stdin, rbuf)
   if (bytes < 0) {
@@ -16,7 +20,9 @@ while (1) {
   total += bytes
   if (bytes === 0) {
     close(stdin)
-    print(total)
+    const seconds = (Date.now() - start) / 1000
+    print(`${toGib(total / seconds)} Gbit/sec`)
+    print(JSON.stringify(just.memoryUsage(), null, '  '))
     break
   }
 }

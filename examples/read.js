@@ -28,8 +28,8 @@ let total = 0
 let bytes = 0
 const target = parseInt(args[2] || '1', 10)
 
-function toMib (bytes) {
-  return Math.floor(bytes / (1024 * 1024)) * 8
+function toGib (bytes) {
+  return Math.floor((bytes * 8) / (1000 * 1000 * 10)) / 100
 }
 
 function run (target) {
@@ -43,7 +43,8 @@ function run (target) {
       bytes += r
     }
     if (total === target) {
-      print(toMib(bytes / ((Date.now() - start) / 1000)))
+      const seconds = (Date.now() - start) / 1000
+      print(`${toGib(bytes / seconds)} Gbit/sec`)
       break
     }
   }

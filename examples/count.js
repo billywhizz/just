@@ -2,6 +2,9 @@ const { print, sys, net, loop } = just
 const { strerror, errno, fcntl, F_SETFL, F_GETFL } = sys
 const { EPOLLERR, EPOLLHUP, EPOLLIN, EPOLL_CTL_ADD, EPOLL_CLOEXEC, create, control, wait } = loop
 const { close, read, EAGAIN, O_NONBLOCK } = net
+function toGib (bytes) {
+  return Math.floor((bytes * 8) / (1000 * 1000 * 10)) / 100
+}
 function onEvent (fd, event) {
   const bytes = read(fd, rbuf)
   if (bytes < 0) {
@@ -16,7 +19,9 @@ function onEvent (fd, event) {
   if (bytes === 0 || (event & EPOLLERR || event & EPOLLHUP)) {
     close(fd)
     close(loopfd)
-    print(total)
+    const seconds = (Date.now() - start) / 1000
+    print(`${toGib(total / seconds)} Gbit/sec`)
+    print(JSON.stringify(just.memoryUsage(), null, '  '))
   }
 }
 function setFlag (fd, flag) {
@@ -35,6 +40,7 @@ const events = new Uint32Array(evbuf)
 const loopfd = create(EPOLL_CLOEXEC)
 setFlag(stdin, O_NONBLOCK)
 r = control(loopfd, EPOLL_CTL_ADD, stdin, EPOLLIN)
+const start = Date.now()
 r = wait(loopfd, evbuf)
 while (r > 0) {
   let off = 0
