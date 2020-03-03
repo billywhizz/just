@@ -3,12 +3,24 @@
 ## count.js
 
 counts the bytes piped to stdin. uses the event loop and non blocking sockets
-- 40 Gbit/sec on stdin
+```bash
+$ dd if=/dev/zero bs=65536 count=1000000 | just examples/count.js
+1000000+0 records in
+1000000+0 records out
+65536000000 bytes (66 GB, 61 GiB) copied, 13.5417 s, 4.8 GB/s
+38 Gbit/sec
+```
 
 ## count-sync.js
 
 synchronous version of count.js. no event loop. just standard blocking calls
-- 40 Gbit/sec on stdin
+```bash
+$ dd if=/dev/zero bs=65536 count=1000000 | just examples/count-sync.js
+1000000+0 records in
+1000000+0 records out
+65536000000 bytes (66 GB, 61 GiB) copied, 13.4929 s, 4.9 GB/s
+38 Gbit/sec
+```
 
 ## server.js
 
@@ -18,7 +30,7 @@ dumb tcp web server for benchmarking. uses event loop, sockets, timers
 ## unixserver.js
 
 dumb unix domain socket web server for benchmarking. uses event loop, sockets, timers
-- 417k non pipelined rps
+- 392k non pipelined rps
 
 ## client.js
 
@@ -28,12 +40,25 @@ tcp http client to stress the server with 128 clients
 ## unixclient.js
 
 unix domain socket http client to stress the server with 128 clients
-- 417k non pipelined rps
+- 392k non pipelined rps
 
 ## read.js
 
 synchronous reading of /dev/zero from filesystem
-- 147 Gbit/
+```bash
+$ just examples/read.js 100000
+152 Gbit/sec
+{
+  "rss": 17022976,
+  "total_heap_size": 3166208,
+  "used_heap_size": 610556,
+  "external_memory": 274816,
+  "heap_size_limit": 1493172224,
+  "total_available_size": 1491831024,
+  "total_heap_size_executable": 573440,
+  "total_physical_size": 1724396
+}
+```
 
 ## starttime.js
 
