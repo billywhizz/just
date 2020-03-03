@@ -21,7 +21,7 @@
 #include <signal.h>
 #include "builtins.h"
 
-#define JUST_MAX_HEADERS 16
+#define JUST_MAX_HEADERS 32
 #define JUST_MICROS_PER_SEC 1e6
 
 namespace just {
