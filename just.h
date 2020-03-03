@@ -146,16 +146,18 @@ inline void SET_VALUE(Isolate *isolate, Local<ObjectTemplate>
     value);
 }
 
-MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
+Local<String> ReadFile(Isolate *isolate, const char *name) {
   FILE *file = fopen(name, "rb");
   if (file == NULL) {
     isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, 
       "Bad File", NewStringType::kNormal).ToLocalChecked()));
-    return MaybeLocal<String>();
+    return Local<String>();
   }
   fseek(file, 0, SEEK_END);
   size_t size = ftell(file);
+  //fprintf(stderr, "size: %lu\n", size);
   rewind(file);
+  //char* chars = (char*)calloc(1, size + 1);
   char chars[size + 1];
   chars[size] = '\0';
   for (size_t i = 0; i < size;) {
@@ -164,12 +166,12 @@ MaybeLocal<String> ReadFile(Isolate *isolate, const char *name) {
       fclose(file);
       isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, 
         "Read Error", NewStringType::kNormal).ToLocalChecked()));
-      return MaybeLocal<String>();
+      return Local<String>();
     }
   }
   fclose(file);
-  MaybeLocal<String> result = String::NewFromUtf8(isolate, chars, 
-    NewStringType::kNormal, static_cast<int>(size));
+  Local<String> result = String::NewFromUtf8(isolate, chars, 
+    NewStringType::kNormal, static_cast<int>(size)).ToLocalChecked();
   return result;
 }
 
@@ -180,6 +182,7 @@ MaybeLocal<Module> OnModuleInstantiate(Local<Context> context,
 }
 
 void PrintStackTrace(Isolate* isolate, const TryCatch& try_catch) {
+  HandleScope handleScope(isolate);
   Local<Value> exception = try_catch.Exception();
   Local<Message> message = try_catch.Message();
   Local<StackTrace> stack = message->GetStackTrace();
@@ -521,11 +524,13 @@ void HRTime(const FunctionCallbackInfo<Value> &args) {
 
 void RunMicroTasks(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   MicrotasksScope::PerformCheckpoint(isolate);
 }
 
 void EnqueueMicrotask(const FunctionCallbackInfo<Value>& args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   isolate->EnqueueMicrotask(args[0].As<Function>());
 }
 
@@ -700,6 +705,35 @@ void FreeMemory(void* buf, size_t length, void* data) {
   //fprintf(stderr, "free: %lu\n", length);
 }
 
+void Memcpy(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+
+  Local<ArrayBuffer> abdest = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> bdest = abdest->GetBackingStore();
+  char *dest = static_cast<char *>(bdest->Data());
+  int dlen = bdest->ByteLength();
+
+  Local<ArrayBuffer> absource = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> bsource = absource->GetBackingStore();
+  char *source = static_cast<char *>(bsource->Data());
+  int slen = bsource->ByteLength();
+
+  int argc = args.Length();
+  int off = 0;
+  if (argc > 2) {
+    off = args[2]->Int32Value(context).ToChecked();
+  }
+  int len = slen;
+  if (argc > 3) {
+    len = args[3]->Int32Value(context).ToChecked();
+  }
+  dest = dest + off;
+  memcpy(dest, source, len);
+  args.GetReturnValue().Set(Integer::New(isolate, len));
+}
+
 void Calloc(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -854,6 +888,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "readString", ReadString);
   SET_METHOD(isolate, sys, "writeString", WriteString);
   SET_METHOD(isolate, sys, "fcntl", Fcntl);
+  SET_METHOD(isolate, sys, "memcpy", Memcpy);
   SET_METHOD(isolate, sys, "sleep", Sleep);
   SET_METHOD(isolate, sys, "timer", Timer);
   SET_METHOD(isolate, sys, "memoryUsage", MemoryUsage);
@@ -1259,18 +1294,22 @@ namespace fs {
 
 void ReadFile(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   String::Utf8Value fname(isolate, args[0]);
-  args.GetReturnValue().Set(just::ReadFile(isolate, *fname).ToLocalChecked());
+  Local<String> str = just::ReadFile(isolate, *fname);
+  args.GetReturnValue().Set(str);
 }
 
 void Unlink(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   String::Utf8Value fname(isolate, args[0]);
   args.GetReturnValue().Set(Integer::New(isolate, unlink(*fname)));
 }
 
 void Open(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   String::Utf8Value fname(isolate, args[0]);
   int argc = args.Length();
@@ -1287,6 +1326,7 @@ void Open(const FunctionCallbackInfo<Value> &args) {
 
 void Ioctl(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
   int flags = args[1]->Int32Value(context).ToChecked();
@@ -1339,6 +1379,7 @@ namespace tty {
 
 void TtyName(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> out = args[1].As<ArrayBuffer>();

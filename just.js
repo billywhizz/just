@@ -98,6 +98,9 @@ function main () {
   ArrayBuffer.prototype.readString = function (len, off) { // eslint-disable-line
     return sys.readString(this, len, off)
   }
+  ArrayBuffer.prototype.copyFrom = function (ab, off, len) { // eslint-disable-line
+    return sys.memcpy(this, ab, off, len)
+  }
   const calloc = sys.calloc
   ArrayBuffer.fromString = str => calloc(1, str)
   delete sys.calloc // remove this as we don't want it in userland
