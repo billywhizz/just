@@ -18,6 +18,7 @@ builtins.h: ## compile builtin js
 	xxd -i lib/require.js >> builtins.h
 	xxd -i lib/path.js >> builtins.h
 	xxd -i lib/repl.js >> builtins.h
+	xxd -i lib/fs.js >> builtins.h
 	sed -i 's/unsigned char/const char/g' builtins.h
 	sed -i 's/unsigned int/unsigned int/g' builtins.h
 

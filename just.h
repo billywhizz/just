@@ -19,6 +19,8 @@
 #include <gnu/libc-version.h>
 #include <sys/signalfd.h>
 #include <signal.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "builtins.h"
 
 #define JUST_MAX_HEADERS 32
@@ -263,6 +265,7 @@ enum builtins
   PATH,
   REPL,
   REQUIRE,
+  FS,
   WEBSOCKET
 };
 
@@ -372,6 +375,11 @@ void Builtin(const FunctionCallbackInfo<Value> &args) {
       NewStringType::kNormal, lib_loop_js_len).ToLocalChecked());
     return;
   }
+  if (builtin == builtins::FS) {
+    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_fs_js, 
+      NewStringType::kNormal, lib_fs_js_len).ToLocalChecked());
+    return;
+  }
   if (builtin == builtins::PATH) {
     args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_path_js, 
       NewStringType::kNormal, lib_path_js_len).ToLocalChecked());
@@ -436,6 +444,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, vm, "LOOP", Integer::New(isolate, builtins::LOOP));
   SET_VALUE(isolate, vm, "PATH", Integer::New(isolate, builtins::PATH));
   SET_VALUE(isolate, vm, "REPL", Integer::New(isolate, builtins::REPL));
+  SET_VALUE(isolate, vm, "FS", Integer::New(isolate, builtins::FS));
   SET_VALUE(isolate, vm, "REQUIRE", Integer::New(isolate, 
     builtins::REQUIRE));
   SET_VALUE(isolate, vm, "WEBSOCKET", Integer::New(isolate, 
@@ -1344,12 +1353,158 @@ void Ioctl(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, ioctl(fd, flags)));
 }
 
+void Fstat(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  Local<BigUint64Array> answer = args[1].As<BigUint64Array>();
+  Local<ArrayBuffer> ab = answer->Buffer();
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  uint64_t *fields = static_cast<uint64_t *>(backing->Data());
+  struct stat s;
+  int rc = fstat(fd, &s);
+  if (rc == 0) {
+    fields[0] = s.st_dev;
+    fields[1] = s.st_mode;
+    fields[2] = s.st_nlink;
+    fields[3] = s.st_uid;
+    fields[4] = s.st_gid;
+    fields[5] = s.st_rdev;
+    fields[6] = s.st_ino;
+    fields[7] = s.st_size;
+    fields[8] = s.st_blksize;
+    fields[9] = s.st_blocks;
+    //fields[10] = s.st_flags;
+    //fields[11] = s.st_gen;
+    fields[12] = s.st_atim.tv_sec;
+    fields[13] = s.st_atim.tv_nsec;
+    fields[14] = s.st_mtim.tv_sec;
+    fields[15] = s.st_mtim.tv_nsec;
+    fields[16] = s.st_ctim.tv_sec;
+    fields[17] = s.st_ctim.tv_nsec;
+    args.GetReturnValue().Set(Integer::New(isolate, 0));
+  }
+  args.GetReturnValue().Set(Integer::New(isolate, rc));
+}
+
+void Rmdir(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  String::Utf8Value path(isolate, args[0]);
+  int rc = rmdir(*path);
+  args.GetReturnValue().Set(Integer::New(isolate, rc));
+}
+
+void Mkdir(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  String::Utf8Value path(isolate, args[0]);
+  int mode = S_IRWXO | S_IRWXG | S_IRWXU;
+  int argc = args.Length();
+  if (argc > 1) {
+    mode = args[1]->Int32Value(context).ToChecked();
+  }
+  int rc = mkdir(*path, mode);
+  args.GetReturnValue().Set(Integer::New(isolate, rc));
+}
+
+void Readdir(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  String::Utf8Value path(isolate, args[0]);
+  Local<Array> answer = args[1].As<Array>();
+  DIR* directory = opendir(*path);
+  if (directory == NULL) {
+    args.GetReturnValue().Set(Null(isolate));
+    return;
+  }
+  dirent* entry = readdir(directory);
+  if (entry == NULL) {
+    args.GetReturnValue().Set(Null(isolate));
+    return;
+  }
+  int i = 0;
+  while (entry) {
+    Local<Object> o = Object::New(isolate);
+    o->Set(context, String::NewFromUtf8(isolate, "name", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      String::NewFromUtf8(isolate, entry->d_name).ToLocalChecked()).Check();
+    o->Set(context, String::NewFromUtf8(isolate, "type", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, entry->d_type)).Check();
+    o->Set(context, String::NewFromUtf8(isolate, "ino", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, entry->d_ino)).Check();
+    o->Set(context, String::NewFromUtf8(isolate, "off", 
+      NewStringType::kNormal).ToLocalChecked(), 
+      Integer::New(isolate, entry->d_off)).Check();
+    o->Set(context, String::NewFromUtf8(isolate, "reclen", 
+      NewStringType::kNormal).ToLocalChecked(), 
+        Integer::New(isolate, entry->d_reclen)).Check();
+    answer->Set(context, i++, o);
+    entry = readdir(directory);
+    if (i == 1023) break;
+  }
+  closedir(directory);
+  args.GetReturnValue().Set(answer);
+}
+
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> fs = ObjectTemplate::New(isolate);
   SET_METHOD(isolate, fs, "readFile", just::fs::ReadFile);
   SET_METHOD(isolate, fs, "open", just::fs::Open);
   SET_METHOD(isolate, fs, "unlink", just::fs::Unlink);
   SET_METHOD(isolate, fs, "ioctl", just::fs::Ioctl);
+  SET_METHOD(isolate, fs, "rmdir", just::fs::Rmdir);
+  SET_METHOD(isolate, fs, "mkdir", just::fs::Mkdir);
+  SET_METHOD(isolate, fs, "fstat", just::fs::Fstat);
+  SET_METHOD(isolate, fs, "readdir", just::fs::Readdir);
+  // todo: move fcntl here
+
+  SET_VALUE(isolate, fs, "O_RDONLY", Integer::New(isolate, O_RDONLY));
+  SET_VALUE(isolate, fs, "O_WRONLY", Integer::New(isolate, O_WRONLY));
+  SET_VALUE(isolate, fs, "O_RDWR", Integer::New(isolate, O_RDWR));
+  SET_VALUE(isolate, fs, "O_CREAT", Integer::New(isolate, O_CREAT));
+  SET_VALUE(isolate, fs, "O_EXCL", Integer::New(isolate, O_EXCL));
+  SET_VALUE(isolate, fs, "O_APPEND", Integer::New(isolate, O_APPEND));
+  SET_VALUE(isolate, fs, "O_SYNC", Integer::New(isolate, O_SYNC));
+  SET_VALUE(isolate, fs, "O_TRUNC", Integer::New(isolate, O_TRUNC));
+
+  SET_VALUE(isolate, fs, "S_IRUSR", Integer::New(isolate, S_IRUSR));
+  SET_VALUE(isolate, fs, "S_IWUSR", Integer::New(isolate, S_IWUSR));
+  SET_VALUE(isolate, fs, "S_IXUSR", Integer::New(isolate, S_IXUSR));
+  SET_VALUE(isolate, fs, "S_IRGRP", Integer::New(isolate, S_IRGRP));
+  SET_VALUE(isolate, fs, "S_IWGRP", Integer::New(isolate, S_IWGRP));
+  SET_VALUE(isolate, fs, "S_IXGRP", Integer::New(isolate, S_IXGRP));
+  SET_VALUE(isolate, fs, "S_IROTH", Integer::New(isolate, S_IROTH));
+  SET_VALUE(isolate, fs, "S_IWOTH", Integer::New(isolate, S_IWOTH));
+  SET_VALUE(isolate, fs, "S_IXOTH", Integer::New(isolate, S_IXOTH));
+  SET_VALUE(isolate, fs, "S_IRWXO", Integer::New(isolate, S_IRWXO));
+  SET_VALUE(isolate, fs, "S_IRWXG", Integer::New(isolate, S_IRWXG));
+  SET_VALUE(isolate, fs, "S_IRWXU", Integer::New(isolate, S_IRWXU));
+
+  SET_VALUE(isolate, fs, "DT_BLK", Integer::New(isolate, DT_BLK));
+  SET_VALUE(isolate, fs, "DT_CHR", Integer::New(isolate, DT_CHR));
+  SET_VALUE(isolate, fs, "DT_DIR", Integer::New(isolate, DT_DIR));
+  SET_VALUE(isolate, fs, "DT_FIFO", Integer::New(isolate, DT_FIFO));
+  SET_VALUE(isolate, fs, "DT_LNK", Integer::New(isolate, DT_LNK));
+  SET_VALUE(isolate, fs, "DT_REG", Integer::New(isolate, DT_REG));
+  SET_VALUE(isolate, fs, "DT_SOCK", Integer::New(isolate, DT_SOCK));
+  SET_VALUE(isolate, fs, "DT_UNKNOWN", Integer::New(isolate, DT_UNKNOWN));
+
+  SET_VALUE(isolate, fs, "S_IFMT", Integer::New(isolate, S_IFMT));
+  SET_VALUE(isolate, fs, "S_IFSOCK", Integer::New(isolate, S_IFSOCK));
+  SET_VALUE(isolate, fs, "S_IFLNK", Integer::New(isolate, S_IFLNK));
+  SET_VALUE(isolate, fs, "S_IFREG", Integer::New(isolate, S_IFREG));
+  SET_VALUE(isolate, fs, "S_IFBLK", Integer::New(isolate, S_IFBLK));
+  SET_VALUE(isolate, fs, "S_IFDIR", Integer::New(isolate, S_IFDIR));
+  SET_VALUE(isolate, fs, "S_IFCHR", Integer::New(isolate, S_IFCHR));
+  SET_VALUE(isolate, fs, "S_IFIFO", Integer::New(isolate, S_IFIFO));
+
   SET_MODULE(isolate, target, "fs", fs);
 }
 

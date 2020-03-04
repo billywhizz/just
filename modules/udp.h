@@ -6,6 +6,7 @@ namespace udp {
 
 void RecvMsg(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Uint32Value(context).ToChecked();
   Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
@@ -39,6 +40,7 @@ void RecvMsg(const FunctionCallbackInfo<Value> &args) {
 
 void SendMsg(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   int argc = args.Length();
   int fd = args[0]->Uint32Value(context).ToChecked();

@@ -61,24 +61,27 @@ function wrapHeapUsage (heapUsage) {
 function wrapRequireNative (cache = {}) {
   function require (path) {
     if (cache[path]) return cache[path].exports
+    const { vm } = just
     const params = ['exports', 'require', 'module']
     const exports = {}
     const module = { exports, type: 'native' }
     if (path === 'inspector') {
-      module.text = just.vm.builtin(just.vm.INSPECTOR).slice(0)
+      module.text = vm.builtin(vm.INSPECTOR).slice(0)
     } else if (path === 'websocket') {
-      module.text = just.vm.builtin(just.vm.WEBSOCKET).slice(0)
+      module.text = vm.builtin(vm.WEBSOCKET).slice(0)
     } else if (path === 'require') {
-      module.text = just.vm.builtin(just.vm.REQUIRE).slice(0)
+      module.text = vm.builtin(vm.REQUIRE).slice(0)
     } else if (path === 'path') {
-      module.text = just.vm.builtin(just.vm.PATH).slice(0)
+      module.text = vm.builtin(vm.PATH).slice(0)
+    } else if (path === 'fs') {
+      module.text = vm.builtin(vm.FS).slice(0)
     } else if (path === 'loop') {
-      module.text = just.vm.builtin(just.vm.LOOP).slice(0)
+      module.text = vm.builtin(vm.LOOP).slice(0)
     } else if (path === 'repl') {
-      module.text = just.vm.builtin(just.vm.REPL).slice(0)
+      module.text = vm.builtin(vm.REPL).slice(0)
     }
     if (!module.text) return
-    const fun = just.vm.compile(module.text, path, params, [])
+    const fun = vm.compile(module.text, path, params, [])
     module.function = fun
     cache[path] = module
     fun.call(exports, exports, p => require(p, module), module)
