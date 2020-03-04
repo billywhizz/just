@@ -2,38 +2,14 @@ const websockets = {}
 const rbuf = new ArrayBuffer(1 * 1024 * 1024)
 const wbuf = new ArrayBuffer(1 * 1024 * 1024)
 const { Parser, createBinaryMessage } = just.require('websocket')
+const { repl } = just.require('repl')
 const { crypto, encode, sys, net, http } = just
 const { EPOLLIN, EPOLLERR, EPOLLHUP } = just.loop
-const { SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_UNIX, AF_INET, SOCK_NONBLOCK, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, IPPROTO_TCP, TCP_NODELAY, SO_KEEPALIVE, socketpair } = net
-
-function sendResponse (request, statusCode = 200, statusMessage = 'OK', str = '') {
-  const { fd } = request
-  const headers = []
-  let len = 0
-  if (str.length) {
-    len = sys.writeString(wbuf, str)
-  }
-  headers.push(`HTTP/1.1 ${statusCode} ${statusMessage}`)
-  headers.push(`Content-Length: ${len}`)
-  headers.push('')
-  headers.push('')
-  const hstr = headers.join('\r\n')
-  const buf = ArrayBuffer.fromString(hstr)
-  let bytes = net.send(fd, buf)
-  if (!str.length) return
-  const chunks = Math.ceil(len / 16384)
-  let total = 0
-  for (let i = 0, o = 0; i < chunks; ++i, o += 16384) {
-    bytes = net.send(fd, wbuf.slice(o, o + 16384))
-    total += bytes
-  }
-  just.print(total)
-}
-
-function closeSocket (fd) {
-  net.close(fd)
-  delete websockets[fd]
-}
+const {
+  SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_UNIX, AF_INET, SOCK_NONBLOCK, 
+  SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, IPPROTO_TCP, TCP_NODELAY, 
+  SO_KEEPALIVE, socketpair
+} = net
 
 function sha1 (str) {
   const source = new ArrayBuffer(str.length)
@@ -63,16 +39,16 @@ function startWebSocket (request) {
   // todo: can i just one socketpair?
   socketpair(AF_UNIX, SOCK_STREAM, stdinfds)
   socketpair(AF_UNIX, SOCK_STREAM, stdoutfds)
-  const repl = new ArrayBuffer(1 * 1024 * 1024)
-  just.require('repl').repl(loop, repl, stdinfds[1], stdoutfds[1])
+  const buf = new ArrayBuffer(1 * 1024 * 1024)
+  repl(loop, buf, stdinfds[1], stdoutfds[1])
   loop.add(stdoutfds[0], (fd, event) => {
     if (event & net.EPOLLERR || event & net.EPOLLHUP) {
       net.close(fd)
       return
     }
     if (event && EPOLLIN) {
-      const bytes = net.read(fd, repl)
-      const msg = createBinaryMessage(repl, bytes)
+      const bytes = net.read(fd, buf)
+      const msg = createBinaryMessage(buf, bytes)
       net.send(request.fd, msg)
     }
   })
@@ -85,8 +61,6 @@ function startWebSocket (request) {
       bytes[pos] = bytes[pos] ^ header.maskkey[pos % 4]
       pos++
     }
-    //const msg = createBinaryMessage(rbuf, len, off)
-    //net.write(request.fd, msg)
     net.write(stdinfds[0], rbuf, len, off)
   }
   request.onData = (off, len) => {
@@ -94,6 +68,30 @@ function startWebSocket (request) {
   }
   request.parser = parser
   net.send(fd, wbuf, sys.writeString(wbuf, res.join('\r\n')))
+}
+
+function sendResponse (request, statusCode = 200, statusMessage = 'OK', str = '') {
+  const { fd } = request
+  const headers = []
+  let len = 0
+  if (str.length) {
+    len = sys.writeString(wbuf, str)
+  }
+  headers.push(`HTTP/1.1 ${statusCode} ${statusMessage}`)
+  headers.push(`Content-Length: ${len}`)
+  headers.push('')
+  headers.push('')
+  const hstr = headers.join('\r\n')
+  const buf = ArrayBuffer.fromString(hstr)
+  let bytes = net.send(fd, buf)
+  if (!str.length) return
+  const chunks = Math.ceil(len / 16384)
+  let total = 0
+  for (let i = 0, o = 0; i < chunks; ++i, o += 16384) {
+    bytes = net.send(fd, wbuf.slice(o, o + 16384))
+    total += bytes
+  }
+  just.print(total)
 }
 
 function onSocketEvent (fd, event) {
@@ -131,6 +129,11 @@ function onSocketEvent (fd, event) {
     }
     sendResponse(request, 404, 'Not Found')
   }
+}
+
+function closeSocket (fd) {
+  net.close(fd)
+  delete websockets[fd]
 }
 
 function onListenEvent (fd, event) {

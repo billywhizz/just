@@ -62,10 +62,11 @@ function wrapHeapUsage (heapUsage) {
 }
 
 function wrapRequireNative (cache = {}) {
-  function require (path, parent) {
+  function require (path) {
+    if (cache[path]) return cache[path].exports
     const params = ['exports', 'require', 'module']
     const exports = {}
-    const module = { exports }
+    const module = { exports, type: 'native' }
     if (path === 'inspector') {
       module.text = just.vm.builtin(just.vm.INSPECTOR).slice(0)
     } else if (path === 'websocket') {
