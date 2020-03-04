@@ -10,10 +10,7 @@ function wrapCpuUsage (cpuUsage) {
   const cpu = new Float64Array(16)
   return () => {
     cpuUsage(cpu)
-    return {
-      user: cpu[0],
-      system: cpu[1]
-    }
+    return { user: cpu[0], system: cpu[1] }
   }
 }
 
@@ -43,7 +40,7 @@ function wrapEnv (env) {
 }
 
 function wrapHeapUsage (heapUsage) {
-  const heap = [new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4), new Float64Array(4)]
+  const heap = (new Array(16)).fill(0).map(v => new Float64Array(4))
   return () => {
     const usage = heapUsage(heap)
     usage.spaces = Object.keys(usage.heapSpaces).map(k => {
@@ -92,7 +89,6 @@ function wrapRequireNative (cache = {}) {
 
 function main () {
   const { vm, fs, sys, net } = just
-  // add helpers to ArrayBuffer class. TODO: this is probably a bad thing
   ArrayBuffer.prototype.writeString = function(str, off = 0) { // eslint-disable-line
     return sys.writeString(this, str, off)
   }
@@ -104,7 +100,7 @@ function main () {
   }
   const calloc = sys.calloc
   ArrayBuffer.fromString = str => calloc(1, str)
-  delete sys.calloc // remove this as we don't want it in userland
+  delete sys.calloc
   just.memoryUsage = wrapMemoryUsage(sys.memoryUsage)
   just.cpuUsage = wrapCpuUsage(sys.cpuUsage)
   just.hrtime = wrapHrtime(sys.hrtime)
@@ -114,7 +110,6 @@ function main () {
   just.require = just.require('require').wrap(just.requireCache).require
   just.heapUsage = wrapHeapUsage(sys.heapUsage)
   just.path = just.require('path')
-  // todo: factory is a bad name
   const { factory, createLoop } = just.require('loop')
   just.factory = factory
   global.loop = factory.create(1024)
@@ -126,29 +121,23 @@ function main () {
     return !found
   })
   const { args } = just
-  // we are in a thread
   if (just.workerSource) {
     const source = just.workerSource
     delete just.workerSource
-    // script name is passed as args[0] from the runtime when we are running
-    // a thread
     vm.runScript(source, args[0])
     factory.run()
     return
   }
-  // no args passed - run a repl
   if (args.length === 1) {
     just.require('repl').repl(global.loop, new ArrayBuffer(4096))
     factory.run()
     return
   }
-  // evaluate script from args
   if (args[1] === '-e') {
     vm.runScript(args[2], 'eval')
     factory.run()
     return
   }
-  // evaluate script piped to stdin
   if (args[1] === '--') {
     const buf = new ArrayBuffer(4096)
     const chunks = []
