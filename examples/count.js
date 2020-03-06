@@ -2,8 +2,8 @@ const { print, sys, net, loop } = just
 const { strerror, errno, fcntl, F_SETFL, F_GETFL } = sys
 const { EPOLLERR, EPOLLHUP, EPOLLIN, EPOLL_CTL_ADD, EPOLL_CLOEXEC, create, control, wait } = loop
 const { close, read, EAGAIN, O_NONBLOCK } = net
-function toGib (bytes) {
-  return Math.floor((bytes * 8) / (1000 * 1000)) / 100
+function toMB (bytes) {
+  return Math.floor((bytes) / (1000 * 1000))
 }
 function onEvent (fd, event) {
   const bytes = read(fd, rbuf)
@@ -20,8 +20,7 @@ function onEvent (fd, event) {
     close(fd)
     close(loopfd)
     const seconds = (Date.now() - start) / 1000
-    print(`total: ${total} rate: ${toGib(total / seconds)} Gbit/sec`)
-    print(JSON.stringify(just.memoryUsage(), null, '  '))
+    print(`total: ${total} rate: ${toMB(total / seconds)} MB/sec mem: ${just.memoryUsage().rss}`)
   }
 }
 function setFlag (fd, flag) {
