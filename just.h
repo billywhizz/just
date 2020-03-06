@@ -742,6 +742,7 @@ void Memcpy(const FunctionCallbackInfo<Value> &args) {
   if (argc > 4) {
     off2 = args[4]->Int32Value(context).ToChecked();
   }
+  if (len == 0) return;
   dest = dest + off;
   source = source + off2;
   memcpy(dest, source, len);

@@ -2,6 +2,7 @@
 #include "modules/thread.h"
 #include "modules/signal.h"
 #include "modules/udp.h"
+#include "modules/zlib.h"
 // need these four for inspector
 #include "modules/http.h"
 #include "modules/inspector.h"
@@ -22,6 +23,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   inspector::Init(isolate, just);
   crypto::Init(isolate, just);
   encode::Init(isolate, just);
+  zlib::Init(isolate, just);
 }
 
 int Start(int argc, char** argv) {
