@@ -20,3 +20,5 @@ deps/zlib/zconf.h
 deps/zlib/zlib.pc
 deps/zlib/Makefile
 deps/zlib/zconf.h
+deps/zlib/example
+deps/zlib/minigzip
