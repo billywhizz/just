@@ -154,7 +154,7 @@ function main () {
     return
   }
   if (waitForInspector) {
-    just.print('waiting for inspector...')
+    just.error('waiting for inspector...')
     global.inspector = just.require('inspector').createInspector('127.0.0.1', 9222, () => {
       vm.runScript(fs.readFile(args[1]), just.path.join(sys.cwd(), args[1]))
     })

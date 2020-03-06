@@ -23,4 +23,4 @@ if (written > 0) {
 }
 zlib.endDeflate(deflate, true)
 
-just.error(just.memoryUsage().rss)
+just.error(`gzip rss: ${just.memoryUsage().rss}`)

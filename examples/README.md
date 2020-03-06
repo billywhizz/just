@@ -108,3 +108,21 @@ tcp http client using picohttpparser
 ## signal.js
 
 - blocking and intercepting signals on the event loop
+
+## gzip.js
+
+- same as gzip -c. reads uncompressed input from stdin and writes compressed output to stdout
+
+```bash
+tar -cv --to-stdout scratch/ | just experiments/gzip.js | just experiments/gunzip.js | wc -c
+time dd if=/dev/zero bs=65536 count=10000 | just --trace-gc experiments/gzip.js | just --trace-gc experiments/gunzip.js | wc -c
+```
+
+## gunzip.js
+
+- same as gzip -d. reads compressed input from stdin and writes uncompressed output to stdout
+
+```bash
+tar -cv --to-stdout scratch/ | just experiments/gzip.js | just experiments/gunzip.js | wc -c
+time dd if=/dev/zero bs=65536 count=10000 | just --trace-gc experiments/gzip.js | just --trace-gc experiments/gunzip.js | wc -c
+```

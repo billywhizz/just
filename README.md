@@ -1,5 +1,17 @@
 # Just
 
+## Requirements
+
+- linux
+- g++/clang++
+- docker (to build v8 lib, alternatively can download a prebuilt lib from here: )
+
+## build
+make libv8
+make zlib
+make mbedtls
+make runtime
+
 A v8 javascript runtime for linux that aims to be small, fast and simple to understand
 
 ## Key Points and Goals
@@ -24,7 +36,12 @@ main entry point for building the runtime. embedders can roll their own and incl
 
 ### just.h
 
-the just runtime as a single header. any non-essential apis are in separate modules
+the just runtime as a single header. any non-essential apis are in separate modules. we could
+break the individual modules out into separate source files if we need to.
+
+### just.js
+
+the js part of the runtime
 
 ## Line Count
 

@@ -67,11 +67,6 @@ void WriteDeflate(const FunctionCallbackInfo<Value> &args) {
     args.GetReturnValue().Set(Integer::New(isolate, err));
     return;
   }
-  if (stream->total_in < len) {
-    fprintf(stderr, "oof\n");
-    args.GetReturnValue().Set(Integer::New(isolate, -1));
-    return;
-  }
   unsigned int bytes = avail_out - stream->avail_out;
   stream->next_in = next_in;
   stream->avail_in = avail_in;
@@ -84,35 +79,31 @@ void WriteInflate(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
-  z_stream* stream = (z_stream*)ab->GetAlignedPointerFromInternalField(1);
-  int argc = args.Length();
+  Local<ArrayBuffer> outab = args[0].As<ArrayBuffer>();
+  z_stream* stream = (z_stream*)outab->GetAlignedPointerFromInternalField(1);
+  Local<ArrayBuffer> inab = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> in = inab->GetBackingStore();
   unsigned int flush = Z_NO_FLUSH;
-  unsigned int len = args[1]->Uint32Value(context).ToChecked();
-  if (argc > 2) {
-    flush = args[2]->Uint32Value(context).ToChecked();
+  unsigned int off = args[2]->Uint32Value(context).ToChecked();
+  unsigned int len = args[3]->Uint32Value(context).ToChecked();
+  Local<Array> state = args[4].As<Array>();
+  int argc = args.Length();
+  if (argc > 5) {
+    flush = args[5]->Uint32Value(context).ToChecked();
   }
-  unsigned char* next_in = stream->next_in;
+  stream->next_in = (unsigned char*)in->Data() + off;
+  stream->avail_in = len;
   unsigned int avail_in = stream->avail_in;
   unsigned char* next_out = stream->next_out;
   unsigned int avail_out = stream->avail_out;
-  stream->avail_in = len;
   int err = inflate(stream, flush);
-  if (err < 0) {
-    args.GetReturnValue().Set(Integer::New(isolate, err));
-    return;
-  }
-  if (stream->total_in < len) {
-    fprintf(stderr, "oof\n");
-    args.GetReturnValue().Set(Integer::New(isolate, -1));
-    return;
-  }
-  unsigned int bytes = avail_out - stream->avail_out;
-  stream->next_in = next_in;
-  stream->avail_in = avail_in;
+  unsigned int byteswritten = avail_out - stream->avail_out;
+  unsigned int bytesread = avail_in - stream->avail_in;
   stream->next_out = next_out;
   stream->avail_out = avail_out;
-  args.GetReturnValue().Set(Integer::New(isolate, bytes));
+  state->Set(context, 0, Integer::New(isolate, bytesread)).Check();
+  state->Set(context, 1, Integer::New(isolate, byteswritten)).Check();
+  args.GetReturnValue().Set(Integer::New(isolate, err));
 }
 
 void EndDeflate(const FunctionCallbackInfo<Value> &args) {
@@ -218,6 +209,17 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, module, "Z_NO_COMPRESSION", Integer::New(isolate, Z_NO_COMPRESSION));
   SET_VALUE(isolate, module, "Z_BEST_SPEED", Integer::New(isolate, Z_BEST_SPEED));
   SET_VALUE(isolate, module, "Z_DEFAULT_WINDOW_BITS", Integer::New(isolate, Z_DEFAULT_WINDOW_BITS));
+
+  SET_VALUE(isolate, module, "Z_OK", Integer::New(isolate, Z_OK));
+  SET_VALUE(isolate, module, "Z_STREAM_END", Integer::New(isolate, Z_STREAM_END));
+  SET_VALUE(isolate, module, "Z_NEED_DICT", Integer::New(isolate, Z_NEED_DICT));
+  SET_VALUE(isolate, module, "Z_ERRNO", Integer::New(isolate, Z_ERRNO));
+  SET_VALUE(isolate, module, "Z_STREAM_ERROR", Integer::New(isolate, Z_STREAM_ERROR));
+  SET_VALUE(isolate, module, "Z_DATA_ERROR", Integer::New(isolate, Z_DATA_ERROR));
+  SET_VALUE(isolate, module, "Z_MEM_ERROR", Integer::New(isolate, Z_MEM_ERROR));
+  SET_VALUE(isolate, module, "Z_BUF_ERROR", Integer::New(isolate, Z_BUF_ERROR));
+  SET_VALUE(isolate, module, "Z_VERSION_ERROR", Integer::New(isolate, Z_VERSION_ERROR));
+
   SET_MODULE(isolate, target, "zlib", module);
 }
 

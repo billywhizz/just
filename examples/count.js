@@ -3,7 +3,7 @@ const { strerror, errno, fcntl, F_SETFL, F_GETFL } = sys
 const { EPOLLERR, EPOLLHUP, EPOLLIN, EPOLL_CTL_ADD, EPOLL_CLOEXEC, create, control, wait } = loop
 const { close, read, EAGAIN, O_NONBLOCK } = net
 function toGib (bytes) {
-  return Math.floor((bytes * 8) / (1000 * 1000 * 10)) / 100
+  return Math.floor((bytes * 8) / (1000 * 1000)) / 100
 }
 function onEvent (fd, event) {
   const bytes = read(fd, rbuf)
@@ -20,7 +20,7 @@ function onEvent (fd, event) {
     close(fd)
     close(loopfd)
     const seconds = (Date.now() - start) / 1000
-    print(`${toGib(total / seconds)} Gbit/sec`)
+    print(`total: ${total} rate: ${toGib(total / seconds)} Gbit/sec`)
     print(JSON.stringify(just.memoryUsage(), null, '  '))
   }
 }
