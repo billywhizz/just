@@ -13,3 +13,10 @@ scratch
 out
 deps/v8/third_party
 deps/v8/testing
+deps/zlib/*.log
+deps/zlib/*.o
+deps/zlib/*.a
+deps/zlib/zconf.h
+deps/zlib/zlib.pc
+deps/zlib/Makefile
+deps/zlib/zconf.h

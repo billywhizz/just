@@ -19,9 +19,7 @@ builtins.h: ## compile builtin js
 	sed -i 's/unsigned int/unsigned int/g' builtins.h
 
 zlib: ## zlib library
-	cd deps/zlib
-	./configure --static
-	cd ../../
+	cd deps/zlib &&	./configure --static && cd ../../
 	make -C deps/zlib/ clean
 	make -C deps/zlib/ static
 
