@@ -47,7 +47,7 @@ static inline unsigned unhex(uint8_t x) {
   return unhex_table[x];
 }
 
-static size_t hex_decode(char* buf,
+size_t hex_decode(char* buf,
                          size_t len,
                          const char* src,
                          const size_t srcLen) {

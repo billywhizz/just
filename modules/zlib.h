@@ -109,7 +109,6 @@ void WriteInflate(const FunctionCallbackInfo<Value> &args) {
 void EndDeflate(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
   z_stream* stream = (z_stream*)ab->GetAlignedPointerFromInternalField(1);
   int r = deflateEnd(stream);
@@ -123,7 +122,6 @@ void EndDeflate(const FunctionCallbackInfo<Value> &args) {
 void EndInflate(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
   z_stream* stream = (z_stream*)ab->GetAlignedPointerFromInternalField(1);
   int r = inflateEnd(stream);

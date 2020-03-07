@@ -137,10 +137,12 @@ class InspectorClient : public V8InspectorClient {
   Isolate* isolate_;
 };
 
+InspectorClient* client;
+
 void Enable(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
-  InspectorClient* client = new InspectorClient(context, true);
+  client = new InspectorClient(context, true);
 }
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {

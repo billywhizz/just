@@ -722,7 +722,6 @@ void Memcpy(const FunctionCallbackInfo<Value> &args) {
   Local<ArrayBuffer> abdest = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> bdest = abdest->GetBackingStore();
   char *dest = static_cast<char *>(bdest->Data());
-  int dlen = bdest->ByteLength();
 
   Local<ArrayBuffer> absource = args[1].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> bsource = absource->GetBackingStore();
@@ -1392,7 +1391,6 @@ void Fstat(const FunctionCallbackInfo<Value> &args) {
 void Rmdir(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
   String::Utf8Value path(isolate, args[0]);
   int rc = rmdir(*path);
   args.GetReturnValue().Set(Integer::New(isolate, rc));
@@ -1446,7 +1444,7 @@ void Readdir(const FunctionCallbackInfo<Value> &args) {
     o->Set(context, String::NewFromUtf8(isolate, "reclen", 
       NewStringType::kNormal).ToLocalChecked(), 
         Integer::New(isolate, entry->d_reclen)).Check();
-    answer->Set(context, i++, o);
+    answer->Set(context, i++, o).Check();
     entry = readdir(directory);
     if (i == 1023) break;
   }
