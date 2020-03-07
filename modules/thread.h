@@ -26,6 +26,7 @@ void* startThread(void *data) {
 
 void Spawn(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   String::Utf8Value source(isolate, args[0]);
   Local<Context> context = isolate->GetCurrentContext();
   threadContext* ctx = (threadContext*)calloc(1, sizeof(threadContext));
@@ -66,6 +67,7 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
 
 void Join(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<BigInt> bi = args[0]->ToBigInt(context).ToLocalChecked();
   bool lossless = true;

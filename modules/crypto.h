@@ -14,6 +14,7 @@ namespace crypto {
 
 void Hash(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   const mbedtls_md_info_t* algorithm = mbedtls_md_info_from_type((mbedtls_md_type_t)args[0]->Uint32Value(context).ToChecked());
   Local<ArrayBuffer> absource = args[1].As<ArrayBuffer>();

@@ -245,6 +245,7 @@ static size_t base64_encode(const char* src,
 
 void HexEncode(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> absource = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> source = absource->GetBackingStore();
@@ -260,6 +261,7 @@ void HexEncode(const FunctionCallbackInfo<Value> &args) {
 
 void Base64Encode(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> absource = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> source = absource->GetBackingStore();

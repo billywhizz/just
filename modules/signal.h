@@ -6,6 +6,7 @@ namespace signals {
 
 void SignalFD(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
@@ -20,6 +21,7 @@ void SignalFD(const FunctionCallbackInfo<Value> &args) {
 
 void SigEmptySet(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
   sigset_t* set = static_cast<sigset_t*>(backing->Data());
@@ -29,6 +31,7 @@ void SigEmptySet(const FunctionCallbackInfo<Value> &args) {
 
 void SigProcMask(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
@@ -56,6 +59,7 @@ void SigProcMask(const FunctionCallbackInfo<Value> &args) {
 
 void SigAddSet(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
