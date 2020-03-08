@@ -91,17 +91,6 @@ void just_builtins_add(const char* name, const char* source, unsigned int size) 
   builtins[name] = b;
 }
 
-void just_builtins_initialize() {
-  just_builtins_add("just", just_js, just_js_len);
-  just_builtins_add("websocket", lib_websocket_js, lib_websocket_js_len);
-  just_builtins_add("inspector", lib_inspector_js, lib_inspector_js_len);
-  just_builtins_add("loop", lib_loop_js, lib_loop_js_len);
-  just_builtins_add("require", lib_require_js, lib_require_js_len);
-  just_builtins_add("path", lib_path_js, lib_path_js_len);
-  just_builtins_add("repl", lib_repl_js, lib_repl_js_len);
-  just_builtins_add("fs", lib_fs_js, lib_fs_js_len);
-}
-
 inline ssize_t process_memory_usage() {
   char buf[1024];
   const char* s = NULL;
@@ -1086,13 +1075,13 @@ void Read(const FunctionCallbackInfo<Value> &args) {
   int fd = args[0]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> buf = args[1].As<ArrayBuffer>();
   int argc = args.Length();
-  int flags = 0;
+  int len = 0;
   int off = 0;
   if (argc > 2) {
     off = args[2]->Int32Value(context).ToChecked();
   }
   if (argc > 3) {
-    flags = args[3]->Int32Value(context).ToChecked();
+    len = args[3]->Int32Value(context).ToChecked();
   }
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
   const char* data = (const char*)backing->Data() + off;
@@ -1568,7 +1557,6 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
   int statusCode = 0;
   // todo: use our own allocator for array buffers off the v8 heap
   // then we don't need sys.calloc
-  just_builtins_initialize();
   create_params.array_buffer_allocator = 
     ArrayBuffer::Allocator::NewDefaultAllocator();
   Isolate *isolate = Isolate::New(create_params);
@@ -1599,7 +1587,6 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
       arguments->Set(context, i, String::NewFromUtf8(isolate, argv[i], 
         NewStringType::kNormal, strlen(argv[i])).ToLocalChecked()).Check();
     }
-
     Local<Object> globalInstance = context->Global();
     globalInstance->Set(context, String::NewFromUtf8(isolate, "global", 
       NewStringType::kNormal).ToLocalChecked(), globalInstance).Check();

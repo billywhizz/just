@@ -96,7 +96,10 @@ function main () {
   just.env = wrapEnv(sys.env)
   just.requireCache = {}
   just.require = just.requireNative = wrapRequireNative(just.requireCache).require
-  just.require = just.require('require').wrap(just.requireCache).require
+  const requireModule = just.require('require')
+  if (requireModule) {
+    just.require = requireModule.wrap(just.requireCache).require
+  }
   just.heapUsage = wrapHeapUsage(sys.heapUsage)
   just.path = just.require('path')
   const { factory, createLoop } = just.require('loop')
@@ -118,7 +121,9 @@ function main () {
     return
   }
   if (args.length === 1) {
-    just.require('repl').repl(global.loop, new ArrayBuffer(4096))
+    const replModule = just.require('repl')
+    if (!replModule) throw new Error('REPL not enabled')
+    replModule.repl(global.loop, new ArrayBuffer(4096))
     factory.run()
     return
   }
@@ -140,12 +145,16 @@ function main () {
     return
   }
   if (waitForInspector) {
+    const inspectorModule = just.require('inspector')
+    if (!inspectorModule) throw new Error('inspector not enabled')
     just.error('waiting for inspector...')
-    global.inspector = just.require('inspector').createInspector('127.0.0.1', 9222, () => {
-      vm.runScript(fs.readFile(args[1]), just.path.join(sys.cwd(), args[1]))
+    global.inspector = inspectorModule.createInspector('127.0.0.1', 9222, () => {
+      just.path.scriptName = just.path.join(sys.cwd(), args[1])
+      vm.runScript(fs.readFile(args[1]), just.path.scriptName)
     })
   } else {
-    vm.runScript(fs.readFile(args[1]), just.path.join(sys.cwd(), args[1]))
+    just.path.scriptName = just.path.join(sys.cwd(), args[1])
+    vm.runScript(fs.readFile(args[1]), just.path.scriptName)
   }
   factory.run()
 }

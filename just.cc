@@ -15,17 +15,37 @@ namespace just {
 namespace embedder {
 
 void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
+  // c++ runtime
+  // initialize the default modules
   just::InitModules(isolate, just);
-  thread::Init(isolate, just, InitModules);
-  signals::Init(isolate, just);
-  udp::Init(isolate, just);
-// need these four for inspector
+  // required by inspector
   http::Init(isolate, just);
   inspector::Init(isolate, just);
   crypto::Init(isolate, just);
   encode::Init(isolate, just);
+  // miscellaneous modules
+  thread::Init(isolate, just, InitModules);
+  signals::Init(isolate, just);
+  udp::Init(isolate, just);
   zlib::Init(isolate, just);
   tls::Init(isolate, just);
+  // js runtime
+  // main script js
+  just_builtins_add("just", just_js, just_js_len);
+  // required by main
+  just_builtins_add("path", lib_path_js, lib_path_js_len);
+  just_builtins_add("loop", lib_loop_js, lib_loop_js_len);
+  // if you omit this the will only be possible to require builtins
+  just_builtins_add("require", lib_require_js, lib_require_js_len);
+  // required for repl capability
+  just_builtins_add("repl", lib_repl_js, lib_repl_js_len);
+  // required for debugging onlu
+  just_builtins_add("inspector", lib_inspector_js, lib_inspector_js_len);
+  just_builtins_add("websocket", lib_websocket_js, lib_websocket_js_len);
+  // miscellaneous libs
+  just_builtins_add("fs", lib_fs_js, lib_fs_js_len);
+  just_builtins_add("wasm", lib_wasm_js, lib_wasm_js_len);
+  just_builtins_add("libwabt.min", lib_libwabt_min_js, lib_libwabt_min_js_len);
 }
 
 int Start(int argc, char** argv) {

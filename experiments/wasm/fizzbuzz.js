@@ -1,7 +1,9 @@
-const { compile, evaluate, save } = just.require('./wasm.js')
+const { compile, evaluate, save } = just.require('wasm')
 
 async function main () {
-  const { wasm } = await compile('./fizzbuzz.wat')
+  const fileName = just.path.join(just.path.baseName(just.path.scriptName), './fizzbuzz.wat')
+  just.print(fileName)
+  const { wasm } = await compile(fileName)
   save('./fizzbuzz.wasm', wasm)
   const context = {
     println: (off, len) => just.print(context.memory.buffer.readString(len, off))
@@ -11,4 +13,4 @@ async function main () {
   just.print(just.memoryUsage().rss)
 }
 
-main()
+main().catch(err => just.error(err.stack))

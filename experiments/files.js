@@ -33,7 +33,7 @@ function main (str, fileSize) {
   stats.file.write++
   if (size !== fileSize) throw new Error('Size')
   stats.bytes.write += fileSize
-  const text = readFile(fileName, buf)
+  const text = readFile(fileName)
   stats.file.read++
   if (text.length !== fileSize) throw new Error('Size')
   stats.bytes.read += fileSize
