@@ -1112,8 +1112,18 @@ void Read(const FunctionCallbackInfo<Value> &args) {
   Local<Context> context = isolate->GetCurrentContext();
   int fd = args[0]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> buf = args[1].As<ArrayBuffer>();
+  int argc = args.Length();
+  int flags = 0;
+  int off = 0;
+  if (argc > 2) {
+    off = args[2]->Int32Value(context).ToChecked();
+  }
+  if (argc > 3) {
+    flags = args[3]->Int32Value(context).ToChecked();
+  }
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
-  int r = read(fd, backing->Data(), backing->ByteLength());
+  const char* data = (const char*)backing->Data() + off;
+  int r = read(fd, (void*)data, backing->ByteLength() - off);
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
 
@@ -1125,11 +1135,16 @@ void Recv(const FunctionCallbackInfo<Value> &args) {
   Local<ArrayBuffer> buf = args[1].As<ArrayBuffer>();
   int argc = args.Length();
   int flags = 0;
+  int off = 0;
   if (argc > 2) {
-    flags = args[2]->Int32Value(context).ToChecked();
+    off = args[2]->Int32Value(context).ToChecked();
+  }
+  if (argc > 3) {
+    flags = args[3]->Int32Value(context).ToChecked();
   }
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
-  int r = recv(fd, backing->Data(), backing->ByteLength(), flags);
+  const char* data = (const char*)backing->Data() + off;
+  int r = recv(fd, (void*)data, backing->ByteLength() - off, flags);
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
 
