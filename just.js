@@ -65,21 +65,7 @@ function wrapRequireNative (cache = {}) {
     const params = ['exports', 'require', 'module']
     const exports = {}
     const module = { exports, type: 'native' }
-    if (path === 'inspector') {
-      module.text = vm.builtin(vm.INSPECTOR).slice(0)
-    } else if (path === 'websocket') {
-      module.text = vm.builtin(vm.WEBSOCKET).slice(0)
-    } else if (path === 'require') {
-      module.text = vm.builtin(vm.REQUIRE).slice(0)
-    } else if (path === 'path') {
-      module.text = vm.builtin(vm.PATH).slice(0)
-    } else if (path === 'fs') {
-      module.text = vm.builtin(vm.FS).slice(0)
-    } else if (path === 'loop') {
-      module.text = vm.builtin(vm.LOOP).slice(0)
-    } else if (path === 'repl') {
-      module.text = vm.builtin(vm.REPL).slice(0)
-    }
+    module.text = vm.builtin(path)
     if (!module.text) return
     const fun = vm.compile(module.text, path, params, [])
     module.function = fun

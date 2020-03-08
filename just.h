@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <map>
 #include "builtins.h"
 
 #define JUST_MAX_HEADERS 32
@@ -75,6 +76,31 @@ using v8::BackingStoreDeleterCallback;
 using v8::SharedArrayBuffer;
 
 typedef void    (*InitModulesCallback) (Isolate*, Local<ObjectTemplate>);
+
+struct builtin {
+  unsigned int size;
+  const char* source;
+};
+
+std::map<std::string, builtin*> builtins;
+
+void just_builtins_add(const char* name, const char* source, unsigned int size) {
+  struct builtin* b = new builtin();
+  b->size = size;
+  b->source = source;
+  builtins[name] = b;
+}
+
+void just_builtins_initialize() {
+  just_builtins_add("just", just_js, just_js_len);
+  just_builtins_add("websocket", lib_websocket_js, lib_websocket_js_len);
+  just_builtins_add("inspector", lib_inspector_js, lib_inspector_js_len);
+  just_builtins_add("loop", lib_loop_js, lib_loop_js_len);
+  just_builtins_add("require", lib_require_js, lib_require_js_len);
+  just_builtins_add("path", lib_path_js, lib_path_js_len);
+  just_builtins_add("repl", lib_repl_js, lib_repl_js_len);
+  just_builtins_add("fs", lib_fs_js, lib_fs_js_len);
+}
 
 inline ssize_t process_memory_usage() {
   char buf[1024];
@@ -258,17 +284,6 @@ void Error(const FunctionCallbackInfo<Value> &args) {
 
 namespace vm {
 
-enum builtins
-{
-  INSPECTOR = 0,
-  LOOP,
-  PATH,
-  REPL,
-  REQUIRE,
-  FS,
-  WEBSOCKET
-};
-
 void CompileScript(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -354,48 +369,16 @@ void RunModule(const FunctionCallbackInfo<Value> &args) {
 }
 
 void Builtin(const FunctionCallbackInfo<Value> &args) {
-  // todo: some weird bug here when i do "just.print(just.vm.INSPECTOR) 
-  // on a repl, i get a segfault from just.sys.writeString"
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
-  int builtin = args[0]->Uint32Value(context).ToChecked();
-  if (builtin == builtins::INSPECTOR) {
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_inspector_js, 
-      NewStringType::kNormal, lib_inspector_js_len).ToLocalChecked());
+  String::Utf8Value name(isolate, args[0]);
+  builtin* b = builtins[*name];
+  if (b == nullptr) {
+    args.GetReturnValue().Set(Null(isolate));
     return;
   }
-  if (builtin == builtins::WEBSOCKET) {
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_websocket_js, 
-      NewStringType::kNormal, lib_websocket_js_len).ToLocalChecked());
-    return;
-  }
-  if (builtin == builtins::LOOP) {
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_loop_js, 
-      NewStringType::kNormal, lib_loop_js_len).ToLocalChecked());
-    return;
-  }
-  if (builtin == builtins::FS) {
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_fs_js, 
-      NewStringType::kNormal, lib_fs_js_len).ToLocalChecked());
-    return;
-  }
-  if (builtin == builtins::PATH) {
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_path_js, 
-      NewStringType::kNormal, lib_path_js_len).ToLocalChecked());
-    return;
-  }
-  if (builtin == builtins::REQUIRE) {
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_require_js, 
-      NewStringType::kNormal, lib_require_js_len).ToLocalChecked());
-    return;
-  }
-  if (builtin == builtins::REPL) {
-    args.GetReturnValue().Set(String::NewFromUtf8(isolate, lib_repl_js, 
-      NewStringType::kNormal, lib_repl_js_len).ToLocalChecked());
-    return;
-  }
-  args.GetReturnValue().Set(Null(isolate));
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, b->source, 
+    NewStringType::kNormal, b->size).ToLocalChecked());
 }
 
 void RunScript(const FunctionCallbackInfo<Value> &args) {
@@ -439,16 +422,6 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, vm, "runModule", just::vm::RunModule);
   SET_METHOD(isolate, vm, "runScript", just::vm::RunScript);
   SET_METHOD(isolate, vm, "builtin", just::vm::Builtin);
-  SET_VALUE(isolate, vm, "INSPECTOR", Integer::New(isolate, 
-    builtins::INSPECTOR));
-  SET_VALUE(isolate, vm, "LOOP", Integer::New(isolate, builtins::LOOP));
-  SET_VALUE(isolate, vm, "PATH", Integer::New(isolate, builtins::PATH));
-  SET_VALUE(isolate, vm, "REPL", Integer::New(isolate, builtins::REPL));
-  SET_VALUE(isolate, vm, "FS", Integer::New(isolate, builtins::FS));
-  SET_VALUE(isolate, vm, "REQUIRE", Integer::New(isolate, 
-    builtins::REQUIRE));
-  SET_VALUE(isolate, vm, "WEBSOCKET", Integer::New(isolate, 
-    builtins::WEBSOCKET));
   SET_MODULE(isolate, target, "vm", vm);
 }
 
@@ -1595,6 +1568,7 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
   int statusCode = 0;
   // todo: use our own allocator for array buffers off the v8 heap
   // then we don't need sys.calloc
+  just_builtins_initialize();
   create_params.array_buffer_allocator = 
     ArrayBuffer::Allocator::NewDefaultAllocator();
   Isolate *isolate = Isolate::New(create_params);
@@ -1671,9 +1645,12 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     );
     Local<Module> module;
     Local<String> base;
-
-    base = String::NewFromUtf8(isolate, just_js, NewStringType::kNormal, 
-      just_js_len).ToLocalChecked();
+    builtin* main = builtins["just"];
+    if (main == nullptr) {
+      return 1;
+    }
+    base = String::NewFromUtf8(isolate, main->source, NewStringType::kNormal, 
+      main->size).ToLocalChecked();
     ScriptCompiler::Source basescript(base, baseorigin);
     if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
       PrintStackTrace(isolate, try_catch);
