@@ -336,23 +336,20 @@ void RunModule(const FunctionCallbackInfo<Value> &args) {
     True(isolate)); // is module
   Local<Module> module;
   ScriptCompiler::Source basescript(source, baseorigin);
-  if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
-    PrintStackTrace(isolate, try_catch);
+  ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module);
+  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+    try_catch.ReThrow();
     return;
   }
   Maybe<bool> ok = module->InstantiateModule(context, OnModuleInstantiate);
-  if (!ok.ToChecked()) {
-    if (try_catch.HasCaught()) {
-      PrintStackTrace(isolate, try_catch);
-    }
+  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+    try_catch.ReThrow();
     return;
   }
   MaybeLocal<Value> result = module->Evaluate(context);
-  if (result.IsEmpty()) {
-    if (try_catch.HasCaught()) {
-      PrintStackTrace(isolate, try_catch);
-      return;
-    }
+  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+    try_catch.ReThrow();
+    return;
   }
   args.GetReturnValue().Set(result.ToLocalChecked());
 }
@@ -388,18 +385,14 @@ void RunScript(const FunctionCallbackInfo<Value> &args) {
     False(isolate)); // is module
   Local<Script> script;
   ScriptCompiler::Source basescript(source, baseorigin);
-  if (!ScriptCompiler::Compile(context, &basescript).ToLocal(&script)) {
-    // todo: handle these errors properly - need to decide how best to
-    PrintStackTrace(isolate, try_catch);
-    return;
-  }
-  if (try_catch.HasCaught()) {
-    PrintStackTrace(isolate, try_catch);
+  ScriptCompiler::Compile(context, &basescript).ToLocal(&script);
+  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+    try_catch.ReThrow();
     return;
   }
   MaybeLocal<Value> result = script->Run(context);
-  if (try_catch.HasCaught()) {
-    PrintStackTrace(isolate, try_catch);
+  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+    try_catch.ReThrow();
     return;
   }
   args.GetReturnValue().Set(result.ToLocalChecked());
@@ -1664,11 +1657,16 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     if (func->IsFunction()) {
       Local<Function> onExit = Local<Function>::Cast(func);
       Local<Value> argv[0] = { };
-      Local<Value> result = onExit->Call(context, globalInstance, 0, 
-        argv).ToLocalChecked();
-      statusCode = result->Uint32Value(context).ToChecked();
+      MaybeLocal<Value> result = onExit->Call(context, globalInstance, 0, argv);
+      if (!result.IsEmpty()) {
+        statusCode = result.ToLocalChecked()->Uint32Value(context).ToChecked();
+      }
+      if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+        just::PrintStackTrace(isolate, try_catch);
+        return 2;
+      }
+      statusCode = result.ToLocalChecked()->Uint32Value(context).ToChecked();
     }
-
     isolate->ContextDisposedNotification();
     isolate->LowMemoryNotification();
     isolate->ClearKeptObjects();
@@ -1676,7 +1674,6 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     while(!stop) {
       stop = isolate->IdleNotificationDeadline(1);  
     }
-
   }
   isolate->Dispose();
   delete create_params.array_buffer_allocator;
