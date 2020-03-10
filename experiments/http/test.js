@@ -1,18 +1,5 @@
 const { createParser } = just.require('./parser.js')
 
-const buf = new ArrayBuffer(256)
-const parser = createParser(buf)
-/*
-const len = buf.writeString('GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\nGET /')
-
-for (let i = 0; i < len + 1; i++) {
-  const { count, off } = parser.parse(i)
-  just.print(`${i} count ${count} off ${off}`)
-  if (count > 0) {
-    just.print(JSON.stringify(parser.offsets.slice(0, count * 2)))
-  }
-}
-*/
 const chunks = [
   'GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\nGET /',
   ' HTTP/1.1\r\n\r\n',
@@ -67,11 +54,6 @@ const chunks = [
   ' HTTP/1.1\r\nHost: foo\r\n',
   '\r\n'
 ]
-let offset = 0
-let chunkCounter = 0
-let total = 0
-const tbuf = new ArrayBuffer(8)
-
 function onTimerEvent (fd, event) {
   const rss = just.memoryUsage().rss
   just.print(`rps ${total} mem ${rss}`)
@@ -110,6 +92,12 @@ function run () {
   }
 }
 
+let offset = 0
+let chunkCounter = 0
+let total = 0
+const tbuf = new ArrayBuffer(8)
+const buf = new ArrayBuffer(16384)
+const parser = createParser(buf)
 const timerfd = just.sys.timer(1000, 1000)
 loop.add(timerfd, onTimerEvent)
 

@@ -342,7 +342,7 @@ void RunModule(const FunctionCallbackInfo<Value> &args) {
     return;
   }
   Maybe<bool> ok = module->InstantiateModule(context, OnModuleInstantiate);
-  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+  if (ok.IsNothing() && try_catch.HasCaught() && !try_catch.HasTerminated()) {
     try_catch.ReThrow();
     return;
   }

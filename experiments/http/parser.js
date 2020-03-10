@@ -1,10 +1,10 @@
 const MAX_PIPELINE = 512
 const EOH = 168626701 // CrLfCrLf as a 32 bit unsigned integer
 
-function createParser (buf) {
+function createParser (buf, maxPipeline = MAX_PIPELINE) {
   const bufLen = buf.byteLength
   const dv = new DataView(buf)
-  const offsets = new Uint16Array(MAX_PIPELINE * 2)
+  const offsets = new Uint16Array(maxPipeline * 2)
   const state = { count: 0, off: 0 }
   function parse (len = bufLen) {
     len = Math.min(len, bufLen)

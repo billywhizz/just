@@ -1,4 +1,5 @@
 const { createParser } = just.require('./parser.js')
+const { loop } = just.factory
 
 const buf = ArrayBuffer.fromString('GET / HTTP/1.1\r\nHost: foo\r\n\r\n'.repeat(64))
 

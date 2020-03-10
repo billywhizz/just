@@ -76,6 +76,29 @@ function wrapRequireNative (cache = {}) {
   return { cache, require }
 }
 
+function setTimeout (callback, timeout, repeat = 0, loop = just.factory.loop) {
+  const buf = new ArrayBuffer(8)
+  const fd = just.sys.timer(repeat, timeout)
+  loop.add(fd, (fd, event) => {
+    callback()
+    just.net.read(fd, buf)
+    if (repeat === 0) {
+      loop.remove(fd)
+      just.net.close(fd)
+    }
+  })
+  return fd
+}
+
+function setInterval (callback, timeout, loop = just.factory.loop) {
+  return setTimeout(callback, timeout, timeout, loop)
+}
+
+function clearTimeout (fd, loop = just.factory.loop) {
+  loop.remove(fd)
+  just.net.close(fd)
+}
+
 function main () {
   const { vm, fs, sys, net } = just
   ArrayBuffer.prototype.writeString = function(str, off = 0) { // eslint-disable-line
@@ -87,9 +110,10 @@ function main () {
   ArrayBuffer.prototype.copyFrom = function (ab, off, len, off2 = 0) { // eslint-disable-line
     return sys.memcpy(this, ab, off, len, off2)
   }
-  const calloc = sys.calloc
-  ArrayBuffer.fromString = str => calloc(1, str)
-  delete sys.calloc
+  ArrayBuffer.fromString = str => sys.calloc(1, str)
+  just.setTimeout = setTimeout
+  just.setInterval = setInterval
+  just.clearTimeout = just.clearInterval = clearTimeout
   just.memoryUsage = wrapMemoryUsage(sys.memoryUsage)
   just.cpuUsage = wrapCpuUsage(sys.cpuUsage)
   just.hrtime = wrapHrtime(sys.hrtime)
@@ -104,7 +128,8 @@ function main () {
   just.path = just.require('path')
   const { factory, createLoop } = just.require('loop')
   just.factory = factory
-  global.loop = factory.create(1024)
+  const loop = factory.create(1024)
+  just.factory.loop = loop
   just.createLoop = createLoop
   let waitForInspector = false
   just.args = just.args.filter(arg => {
@@ -123,7 +148,7 @@ function main () {
   if (args.length === 1) {
     const replModule = just.require('repl')
     if (!replModule) throw new Error('REPL not enabled')
-    replModule.repl(global.loop, new ArrayBuffer(4096))
+    replModule.repl(loop, new ArrayBuffer(4096))
     factory.run()
     return
   }
