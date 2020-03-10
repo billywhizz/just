@@ -10,7 +10,7 @@ just.setInterval(() => {
 }, 1000)
 let total = 0
 while (1) {
-  for (let i = 0; i < 10000; i++) {
+  for (let i = 0; i < 1000; i++) {
     stream.parse(len, count => {
       total += count
     })

@@ -18,13 +18,14 @@ function createParser (buf, maxPipeline = MAX_PIPELINE) {
         offsets[index + 1] = i + 4 - off
         off = i + 4
         count++
+        // todo: check for exceeding maxPipeline
       }
     }
     state.count = count
     state.off = off
     return state
   }
-  return { offsets, parse }
+  return { offsets, state, parse }
 }
 
 module.exports = { createParser }

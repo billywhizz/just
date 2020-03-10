@@ -6,13 +6,18 @@ class HTTPStream {
     this.buf = buf
     this.parser = parser
     this.offset = off
+    this.inHeader = false
+    this.bodySize = 0
+    this.bodyBytes = 0
   }
 
   parse (bytes, onRequests) {
+    if (bytes === 0) return
     const { buf, parser } = this
     let { offset } = this
     const size = offset + bytes
-    const { count, off } = parser.parse(size)
+    const { count, off, error } = parser.parse(size)
+    if (error) return error
     if (count > 0) {
       onRequests(count)
       if (off < (size)) {
@@ -23,16 +28,24 @@ class HTTPStream {
       }
     } else {
       if (size === buf.byteLength) {
-        throw new Error('Request Too Big')
+        return -3
       }
       offset = size
     }
     this.offset = offset
     return offset
   }
+
+  getHeaders (index) {
+    const { buf, parser } = this
+    const { offsets } = parser
+    index *= 2
+    return buf.readString(offsets[index + 1], offsets[index])
+  }
 }
 
 function createHTTPStream (buf = new ArrayBuffer(4096), maxPipeline = 256, parser = createParser(buf, maxPipeline), offset = 0) {
+  const { offsets } = parser
   function parse (bytes, onRequests) {
     const size = offset + bytes
     const { count, off } = parser.parse(size)
@@ -53,7 +66,11 @@ function createHTTPStream (buf = new ArrayBuffer(4096), maxPipeline = 256, parse
     stream.offset = offset
     return offset
   }
-  const stream = { buf, parser, offset, parse }
+  function getHeaders (index) {
+    index *= 2
+    return buf.readString(offsets[index + 1], offsets[index])
+  }
+  const stream = { buf, parser, offset, parse, getHeaders }
   return stream
 }
 

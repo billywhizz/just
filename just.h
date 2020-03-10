@@ -172,9 +172,7 @@ Local<String> ReadFile(Isolate *isolate, const char *name) {
   }
   fseek(file, 0, SEEK_END);
   size_t size = ftell(file);
-  //fprintf(stderr, "size: %lu\n", size);
   rewind(file);
-  //char* chars = (char*)calloc(1, size + 1);
   char chars[size + 1];
   chars[size] = '\0';
   for (size_t i = 0; i < size;) {

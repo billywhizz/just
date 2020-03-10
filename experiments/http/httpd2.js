@@ -1,20 +1,16 @@
 const { HTTPStream } = just.require('./http.js')
 const { createServer } = just.require('./net.js')
 
-const maxPipeline = 256
+const maxPipeline = 512
 let rps = 0
 
 function onConnect (sock) {
   const stream = new HTTPStream(sock.buf, maxPipeline)
   const { buf, size } = responses[200]
-  sock.onReadable = () => {
-    const bytes = sock.pull(stream.offset)
-    const err = stream.parse(bytes, count => {
-      rps += count
-      sock.write(buf, count * size)
-    })
-    if (err < 0) just.print(`error: ${err}`)
-  }
+  sock.onReadable = () => stream.parse(sock.pull(stream.offset), count => {
+    rps += count
+    sock.write(buf, count * size)
+  })
   sock.onEnd = () => {}
 }
 
@@ -26,15 +22,9 @@ const responses = {
   404: { buf: ArrayBuffer.fromString(r404.repeat(maxPipeline)), size: r404.length }
 }
 
-const last = { user: 0, system: 0 }
 just.setInterval(() => {
   const { rss } = just.memoryUsage()
-  const { user, system } = just.cpuUsage()
-  const upc = (user - last.user) / 1000000
-  const spc = (system - last.system) / 1000000
-  just.print(`mem ${rss} rps ${rps} cpu ${upc} / ${spc}`)
-  last.user = user
-  last.system = system
+  just.print(`mem ${rss} rps ${rps}`)
   rps = 0
 }, 1000)
 
