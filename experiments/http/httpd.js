@@ -27,6 +27,7 @@ const responses = {
 }
 
 const last = { user: 0, system: 0 }
+
 just.setInterval(() => {
   const { rss } = just.memoryUsage()
   const { user, system } = just.cpuUsage()

@@ -1,5 +1,7 @@
 const { createParser } = just.require('./parser.js')
 
+const { loop } = just.factory
+
 const chunks = [
   'GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\nGET /',
   ' HTTP/1.1\r\n\r\n',

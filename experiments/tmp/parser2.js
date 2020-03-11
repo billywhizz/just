@@ -17,10 +17,6 @@ function createParser (buf, maxPipeline = MAX_PIPELINE) {
       off += nread
       len -= nread
       count++
-      if (count === maxPipeline) {
-        state.error = -1
-        return state
-      }
       nread = http.parseRequest(buf, len, off)
     }
     state.count = count
