@@ -21,7 +21,25 @@ function createSocket (fd, buf, onClose) {
     return 0
   }
   socket.pause = () => loop.update(fd, EPOLLOUT)
-  socket.write = (buf, len) => net.send(fd, buf, len)
+  socket.write = (buf, len) => {
+    const r = net.send(fd, buf, len)
+    if (r < 0) {
+      const errno = sys.errno()
+      if (errno === net.EAGAIN) {
+        socket.pause()
+        return 0
+      }
+      just.print(`write: (${errno}) ${sys.strerror(errno)}`)
+      socket.close()
+      return r
+    }
+    if (r === 0) {
+      just.print('zero bytes')
+      socket.close()
+      return -1
+    }
+    return r
+  }
   socket.onReadable = () => {}
   socket.close = () => net.close(fd)
   return socket

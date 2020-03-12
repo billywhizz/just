@@ -1,61 +1,46 @@
-const { HTTPStream } = just.require('./http.js')
-const { createServer } = just.require('./net.js')
-const { sys, net } = just
-
-const maxPipeline = 256
-let rps = 0
-let tbytes = 0
-let conn = 0
+const { print, require, setInterval, memoryUsage, cpuUsage } = just
+const { HTTPStream } = require('./http.js')
+const { createServer } = require('./net.js')
 
 function onConnect (sock) {
-  conn++
+  stats.conn++
   const stream = new HTTPStream(sock.buf, maxPipeline)
   const { buf, size } = responses[200]
   sock.onReadable = () => {
     const bytes = sock.pull(stream.offset)
     if (bytes <= 0) return
     const err = stream.parse(bytes, count => {
-      rps += count
-      const r = sock.write(buf, count * size)
-      if (r < 0) {
-        const errno = sys.errno()
-        if (errno === net.EAGAIN) return sock.pause()
-        just.print(`write: (${errno}) ${sys.strerror(errno)}`)
-        return sock.close()
-      }
-      if (r === 0) {
-        just.print('zero bytes')
-        return sock.close()
-      }
-      tbytes += bytes
+      stats.rps += count
+      if (sock.write(buf, count * size) <= 0) return
+      stats.bytes += bytes
     })
-    if (err < 0) just.print(`error: ${err}`)
+    if (err < 0) print(`error: ${err}`)
   }
-  sock.onWritable = () => {
-    just.print('writable')
-  }
-  sock.onEnd = () => conn--
+  sock.onWritable = () => {}
+  sock.onEnd = () => stats.conn--
 }
 
-const r200 = 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'
-const r404 = 'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n'
-
-const responses = {
-  200: { buf: ArrayBuffer.fromString(r200.repeat(maxPipeline)), size: r200.length },
-  404: { buf: ArrayBuffer.fromString(r404.repeat(maxPipeline)), size: r404.length }
-}
-
+const maxPipeline = 256
+const stats = { rps: 0, bytes: 0, conn: 0 }
 const last = { user: 0, system: 0 }
+const r200 = 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'
+const responses = {
+  200: {
+    buf: ArrayBuffer.fromString(r200.repeat(maxPipeline)),
+    size: r200.length
+  }
+}
 
-just.setInterval(() => {
-  const { rss } = just.memoryUsage()
-  const { user, system } = just.cpuUsage()
-  const upc = (user - last.user) / 1000000
-  const spc = (system - last.system) / 1000000
-  just.print(`mem ${rss} conn ${conn} rps ${rps} cpu ${upc.toFixed(2)} / ${spc.toFixed(2)} bytes ${tbytes}`)
+setInterval(() => {
+  const { rss } = memoryUsage()
+  const { user, system } = cpuUsage()
+  const upc = ((user - last.user) / 1000000).toFixed(2)
+  const spc = ((system - last.system) / 1000000).toFixed(2)
+  const { conn, bytes, rps } = stats
+  print(`mem ${rss} conn ${conn} rps ${rps} cpu ${upc} / ${spc} bytes ${bytes}`)
   last.user = user
   last.system = system
-  rps = tbytes = 0
+  stats.rps = stats.bytes = 0
 }, 1000)
 
 createServer(onConnect).listen()

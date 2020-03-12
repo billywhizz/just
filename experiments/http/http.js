@@ -1,22 +1,39 @@
 
-const { createParser } = just.require('./parser.js')
+const EOH = 168626701 // CrLfCrLf as a 32 bit unsigned integer
+const MIN_REQUEST_SIZE = 18
 
 class HTTPStream {
-  constructor (buf = new ArrayBuffer(4096), maxPipeline = 256, parser = createParser(buf, maxPipeline), off = 0) {
+  constructor (buf = new ArrayBuffer(4096), maxPipeline = 256, off = 0) {
     this.buf = buf
-    this.parser = parser
     this.offset = off
     this.inHeader = false
     this.bodySize = 0
     this.bodyBytes = 0
+    this.dv = new DataView(buf)
+    this.bufLen = buf.byteLength
+    const maxReq = Math.floor(buf.byteLength / MIN_REQUEST_SIZE)
+    this.offsets = new Uint16Array(maxReq * 2)
   }
 
   parse (bytes, onRequests) {
     if (bytes === 0) return
-    const { buf, parser } = this
+    const { buf, bufLen, dv, offsets } = this
     let { offset } = this
     const size = offset + bytes
-    const { count, off } = parser.parse(size)
+    const len = Math.min(size, bufLen)
+    let off = 0
+    let count = 0
+    for (let i = 0; i < len - 3; i++) {
+      const next4 = dv.getUint32(i, true)
+      if (next4 === EOH) {
+        const index = count * 2
+        offsets[index] = off
+        offsets[index + 1] = i + 4 - off
+        off = i + 4
+        count++
+        // todo: check for exceeding maxPipeline
+      }
+    }
     if (count > 0) {
       onRequests(count)
       if (off < (size)) {
@@ -36,8 +53,7 @@ class HTTPStream {
   }
 
   getHeaders (index) {
-    const { buf, parser } = this
-    const { offsets } = parser
+    const { buf, offsets } = this
     index *= 2
     return buf.readString(offsets[index + 1], offsets[index])
   }
