@@ -1,9 +1,10 @@
-const { compile, evaluate, createMemory } = just.require('wasm')
+const { compile, save, evaluate, createMemory } = just.require('wasm')
 const { loop } = just.factory
 
 async function main () {
   const fileName = just.path.join(just.path.baseName(just.path.scriptName), './parse.wat')
   const { wasm } = await compile(fileName)
+  save('./parse.wasm', wasm)
   const memory = createMemory({ initial: 16 })
   const { buffer } = memory
   just.print(buffer.byteLength)
