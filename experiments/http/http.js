@@ -20,8 +20,8 @@ class HTTPStream {
     if (count > 0) {
       onRequests(count)
       if (off < (size)) {
-        buf.copyFrom(buf, 0, bytes - off, off)
-        offset = bytes - off
+        buf.copyFrom(buf, 0, size - off, off)
+        offset = size - off
       } else {
         offset = 0
       }

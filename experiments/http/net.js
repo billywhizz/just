@@ -1,26 +1,33 @@
 const { sys, net } = just
 const { EPOLLERR, EPOLLIN, EPOLLOUT, EPOLLHUP } = just.loop
 const { IPPROTO_TCP, O_NONBLOCK, TCP_NODELAY, SO_KEEPALIVE, SOMAXCONN, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, SOCK_NONBLOCK } = net
+const { loop } = just.factory
 
-function createServer (onConnect, opts = { bufSize: 16384 }) {
-  function createSocket (fd, buf) {
-    const socket = { fd, buf }
-    socket.pull = (off = 0) => {
-      const bytes = net.recv(fd, buf, off)
-      if (bytes > 0) return bytes
-      if (bytes < 0) {
-        const errno = sys.errno()
-        if (errno !== net.EAGAIN) {
-          closeSocket(fd)
-        }
-        return
+const config = { BUFFER_SIZE: 65536 }
+
+function createSocket (fd, buf, onClose) {
+  const socket = { fd, buf }
+  socket.pull = (off = 0) => {
+    const bytes = net.recv(fd, buf, off)
+    if (bytes > 0) return bytes
+    if (bytes < 0) {
+      const errno = sys.errno()
+      if (errno !== net.EAGAIN) {
+        onClose(fd)
       }
-      closeSocket(fd)
+      return bytes
     }
-    socket.write = (buf, len) => net.send(fd, buf, len)
-    socket.onReadable = () => {}
-    return socket
+    onClose(fd)
+    return 0
   }
+  socket.pause = () => loop.update(fd, EPOLLOUT)
+  socket.write = (buf, len) => net.send(fd, buf, len)
+  socket.onReadable = () => {}
+  socket.close = () => net.close(fd)
+  return socket
+}
+
+function createServer (onConnect, opts = { bufSize: config.BUFFER_SIZE }) {
   function closeSocket (fd) {
     clients[fd].onEnd()
     delete clients[fd]
@@ -36,6 +43,7 @@ function createServer (onConnect, opts = { bufSize: 16384 }) {
       return
     }
     if (event & EPOLLOUT) {
+      loop.update(fd, EPOLLIN)
       clients[fd].onWritable()
     }
   }
@@ -47,11 +55,10 @@ function createServer (onConnect, opts = { bufSize: 16384 }) {
     flags |= O_NONBLOCK
     sys.fcntl(clientfd, sys.F_SETFL, flags)
     loop.add(clientfd, onSocketEvent)
-    const sock = createSocket(clientfd, new ArrayBuffer(opts.bufSize))
+    const sock = createSocket(clientfd, new ArrayBuffer(opts.bufSize), closeSocket)
     clients[clientfd] = sock
     onConnect(sock)
   }
-  const { loop } = just.factory
   const clients = {}
   const server = Object.assign({
     maxPipeline: 256,
@@ -71,4 +78,39 @@ function createServer (onConnect, opts = { bufSize: 16384 }) {
   return server
 }
 
-module.exports = { createServer }
+function createClient (onConnect, opts = { bufSize: config.BUFFER_SIZE }) {
+  const fd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
+  if (fd <= 0) throw new Error(`Failed Creating Socket: ${sys.strerror(sys.errno())}`)
+  const sock = { fd, connected: false }
+  function onSocketEvent (fd, event) {
+    if (event & EPOLLOUT) {
+      if (!sock.connected) {
+        sock.connected = true
+        onConnect(sock)
+      }
+      loop.update(fd, EPOLLIN)
+      sock.onWritable()
+    }
+    if (event & EPOLLERR || event & EPOLLHUP) {
+      just.print('err')
+      return net.close(fd)
+    }
+    if (event & EPOLLIN) return sock.onReadable()
+  }
+  sock.connect = (address = '127.0.0.1', port = 3000) => {
+    const r = net.connect(fd, address, port)
+    if (r !== 0) {
+      const errno = sys.errno()
+      if (errno !== 115) {
+        throw new Error(`Failed Connecting: ${sys.strerror(errno)}`)
+      }
+    }
+    net.setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, 1)
+    net.setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, 1)
+    loop.add(fd, onSocketEvent, EPOLLOUT)
+    return Object.assign(sock, createSocket(fd, new ArrayBuffer(opts.bufSize), () => net.close(fd)))
+  }
+  return sock
+}
+
+module.exports = { createServer, createClient, config }
