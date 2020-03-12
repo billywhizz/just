@@ -1,4 +1,4 @@
-const { createParser } = just.require('./parser.js')
+const { createParser } = just.require('../http/parser.js')
 const { loop } = just.factory
 
 const buf = ArrayBuffer.fromString('GET / HTTP/1.1\r\nHost: foo\r\n\r\n'.repeat(64))
@@ -34,6 +34,4 @@ function test () {
 
 while (1) {
   test()
-  just.sys.sleep(1)
-  just.sys.runMicroTasks()
 }

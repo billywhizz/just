@@ -3,6 +3,7 @@ const { createServer } = just.require('./net.js')
 
 const maxPipeline = 256
 let rps = 0
+let tbytes = 0
 
 function onConnect (sock) {
   const stream = new HTTPStream(sock.buf, maxPipeline)
@@ -12,6 +13,7 @@ function onConnect (sock) {
     const err = stream.parse(bytes, count => {
       rps += count
       sock.write(buf, count * size)
+      tbytes += bytes
     })
     if (err < 0) just.print(`error: ${err}`)
   }
@@ -33,10 +35,10 @@ just.setInterval(() => {
   const { user, system } = just.cpuUsage()
   const upc = (user - last.user) / 1000000
   const spc = (system - last.system) / 1000000
-  just.print(`mem ${rss} rps ${rps} cpu ${upc} / ${spc}`)
+  just.print(`mem ${rss} rps ${rps} cpu ${upc} / ${spc} bytes ${tbytes}`)
   last.user = user
   last.system = system
-  rps = 0
+  rps = tbytes = 0
 }, 1000)
 
 createServer(onConnect).listen()
