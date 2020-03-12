@@ -40,7 +40,7 @@ function createSocket (fd, buf, onClose) {
     }
     return r
   }
-  socket.onReadable = () => {}
+  socket.onReadable = socket.onWritable = socket.onEnd = () => {}
   socket.close = () => net.close(fd)
   return socket
 }

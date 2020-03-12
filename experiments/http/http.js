@@ -1,6 +1,51 @@
 
-const EOH = 168626701 // CrLfCrLf as a 32 bit unsigned integer
-const MIN_REQUEST_SIZE = 18
+const MIN_REQUEST_SIZE = 16
+
+function createHTTPStream (buf = new ArrayBuffer(4096), maxPipeline = 256, off = 0) {
+  let offset = off
+  const dv = new DataView(buf)
+  const bufLen = buf.byteLength
+  const offsets = new Uint16Array(Math.floor(buf.byteLength / MIN_REQUEST_SIZE))
+  function parse (bytes, onRequests) {
+    if (bytes === 0) return
+    const size = offset + bytes
+    const len = Math.min(size, bufLen)
+    let off = 0
+    // parse
+    let count = 0
+    const end = len - 3
+    for (; off < end; off++) {
+      if (dv.getUint32(off, true) === 168626701) {
+        offsets[count++] = off + 4
+        off += 3
+      }
+    }
+    offsets[count] = off
+    // end parse
+    if (count > 0) {
+      onRequests(count)
+      if (off < size) {
+        offset = size - off
+        buf.copyFrom(buf, 0, offset, off)
+      } else {
+        offset = 0
+      }
+    } else {
+      if (size === buf.byteLength) {
+        return -3
+      }
+      offset = size
+    }
+    return offset
+  }
+  function getHeaders (index) {
+    if (index === 0) {
+      return buf.readString(offsets[index], 0)
+    }
+    return buf.readString(offsets[index] - offsets[index - 1], offsets[index - 1])
+  }
+  return { parse, getHeaders }
+}
 
 class HTTPStream {
   constructor (buf = new ArrayBuffer(4096), maxPipeline = 256, off = 0) {
@@ -11,8 +56,7 @@ class HTTPStream {
     this.bodyBytes = 0
     this.dv = new DataView(buf)
     this.bufLen = buf.byteLength
-    const maxReq = Math.floor(buf.byteLength / MIN_REQUEST_SIZE)
-    this.offsets = new Uint16Array(maxReq * 2)
+    this.offsets = new Uint16Array(Math.floor(buf.byteLength / MIN_REQUEST_SIZE))
   }
 
   parse (bytes, onRequests) {
@@ -22,23 +66,22 @@ class HTTPStream {
     const size = offset + bytes
     const len = Math.min(size, bufLen)
     let off = 0
+    // parse
     let count = 0
-    for (let i = 0; i < len - 3; i++) {
-      const next4 = dv.getUint32(i, true)
-      if (next4 === EOH) {
-        const index = count * 2
-        offsets[index] = off
-        offsets[index + 1] = i + 4 - off
-        off = i + 4
-        count++
-        // todo: check for exceeding maxPipeline
+    const end = len - 3
+    for (; off < end; off++) {
+      if (dv.getUint32(off, true) === 168626701) {
+        offsets[count++] = off + 4
+        off += 3
       }
     }
+    offsets[count] = off
+    // end parse
     if (count > 0) {
       onRequests(count)
-      if (off < (size)) {
-        buf.copyFrom(buf, 0, size - off, off)
+      if (off < size) {
         offset = size - off
+        buf.copyFrom(buf, 0, offset, off)
       } else {
         offset = 0
       }
@@ -54,9 +97,11 @@ class HTTPStream {
 
   getHeaders (index) {
     const { buf, offsets } = this
-    index *= 2
-    return buf.readString(offsets[index + 1], offsets[index])
+    if (index === 0) {
+      return buf.readString(offsets[index], 0)
+    }
+    return buf.readString(offsets[index] - offsets[index - 1], offsets[index - 1])
   }
 }
 
-module.exports = { HTTPStream }
+module.exports = { HTTPStream, createHTTPStream }

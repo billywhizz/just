@@ -16,9 +16,8 @@ const err = stream.parse(buf.byteLength, count => {
   just.print(count)
   const { offsets } = stream
   for (let i = 0; i < count; i++) {
-    const index = i * 2
-    const len = offsets[index + 1]
-    const off = offsets[index]
+    const len = i ? offsets[i] - offsets[i - 1] : offsets[i]
+    const off = i ? offsets[i - 1] : 0
     parseRequest(buf, len, off)
     onRequest(Object.assign({ index: stream.index++, buf, off, len, rawHeaders: stream.getHeaders(i) }, getRequest()))
   }
