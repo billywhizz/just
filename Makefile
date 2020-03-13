@@ -28,6 +28,11 @@ zlib: ## zlib library
 mbedtls: ## mbedtls library
 	make -C deps/mbedtls/ lib
 
+openssl: ## openssl library
+	cd deps/openssl-1.1.1d &&	./config --release --with-zlib-include=$(pwd)/deps/zlib --with-zlib-lib=$(pwd)/deps/zlib/ no-autoload-config no-autoerrinit no-autoalginit no-afalgeng no-deprecated no-capieng no-cms no-comp no-dgram no-dynamic-engine enable-ec_nistp_64_gcc_128 no-engine no-err no-filenames no-gost no-hw-padlock no-makedepend no-multiblock no-nextprotoneg no-pic no-rfc3779 no-shared no-srp no-srtp no-static-engine no-stdio no-tests threads no-ui zlib no-ssl no-tls1 no-dtls no-aria no-bf no-blake2 no-camellia no-cast no-chacha no-cmac no-des no-idea no-mdc2 no-ocb no-poly1305 no-rc2 no-scrypt no-seed no-siphash no-sm2 no-sm3 no-sm4 no-whirlpool
+	make -C deps/openssl-1.1.1d/ build_generated
+	make -C deps/openssl-1.1.1d/ libssl.a libcrypto.a
+
 runtime: builtins.h deps/mbedtls/library/libmbedcrypto.a ## build runtime
 	$(C) -c -DV8_COMPRESS_POINTERS -I./deps/picohttpparser -O3 -Wall -Wextra -march=native -mtune=native -msse4 deps/picohttpparser/picohttpparser.c
 	$(CC) -c -DV8_COMPRESS_POINTERS -I. -I ./deps/zlib -I./deps/v8/include -I./deps/picohttpparser -I./deps/mbedtls/include -O3 -march=native -mtune=native -Wall -Wextra -flto -Wno-unused-parameter just.cc
@@ -49,5 +54,6 @@ clean-all: ## clean deps too
 	rm -f just
 	make -C deps/zlib clean
 	make -C deps/mbedtls clean
+	make -C deps/openssl-1.1.1d clean
 	
 .DEFAULT_GOAL := help
