@@ -129,8 +129,8 @@ async function main () {
   const { wasm } = await compile('parse.wat')
   const { parse } = evaluate(wasm, {}, memory)
   while (1) {
-    runTests(jsparse, 'js')
-    runTests(jsparse2, 'js2')
+    //runTests(jsparse, 'js')
+    //runTests(jsparse2, 'js2')
     runTests(parse, 'wasm')
     just.sys.runMicroTasks()
     just.print(just.memoryUsage().rss)

@@ -23,3 +23,4 @@ deps/zlib/zconf.h
 deps/zlib/example
 deps/zlib/minigzip
 *.wasm
+*.bin
