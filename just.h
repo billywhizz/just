@@ -1074,17 +1074,17 @@ void Read(const FunctionCallbackInfo<Value> &args) {
   int fd = args[0]->Int32Value(context).ToChecked();
   Local<ArrayBuffer> buf = args[1].As<ArrayBuffer>();
   int argc = args.Length();
-  int len = 0;
+  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
   int off = 0;
   if (argc > 2) {
     off = args[2]->Int32Value(context).ToChecked();
   }
+  int len = backing->ByteLength() - off;
   if (argc > 3) {
     len = args[3]->Int32Value(context).ToChecked();
   }
-  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
   const char* data = (const char*)backing->Data() + off;
-  int r = read(fd, (void*)data, backing->ByteLength() - off);
+  int r = read(fd, (void*)data, len);
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
 

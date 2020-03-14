@@ -45,7 +45,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   // miscellaneous libs
   just_builtins_add("fs", lib_fs_js, lib_fs_js_len);
   just_builtins_add("wasm", lib_wasm_js, lib_wasm_js_len);
-  just_builtins_add("libwabt.min", lib_libwabt_min_js, lib_libwabt_min_js_len);
+  just_builtins_add("libwabt", lib_libwabt_js, lib_libwabt_js_len);
 }
 
 int Start(int argc, char** argv) {
@@ -56,15 +56,21 @@ int Start(int argc, char** argv) {
   // must be something internal in v8 that uses the initial mask and resets to
   // that
   sigset_t set;
-  int r = pthread_sigmask(SIG_SETMASK, NULL, &set);
+  int r = 0;
+  r = pthread_sigmask(SIG_SETMASK, NULL, &set);
+  if (r != 0) return r;
   for (int i = 1; i < 64; i++) {
     r = sigaddset(&set, i);
+    if (r != 0) return r;
   }
   r = pthread_sigmask(SIG_SETMASK, &set, NULL);
+  if (r != 0) return r;
   std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
   r = sigemptyset(&set);
+  if (r != 0) return r;
   // unblock signals - i need to find out why we have to do this!
   r = pthread_sigmask(SIG_SETMASK, &set, NULL);
+  if (r != 0) return r;
   signal(SIGPIPE, SIG_IGN);
   v8::V8::InitializePlatform(platform.get());
   v8::V8::Initialize();
