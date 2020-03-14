@@ -1165,6 +1165,18 @@ void Close(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, close(fd)));
 }
 
+void Shutdown(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Int32Value(context).ToChecked();
+  int how = SHUT_RDWR;
+  if (args.Length() > 1) {
+    how = args[1]->Int32Value(context).ToChecked();
+  }
+  args.GetReturnValue().Set(Integer::New(isolate, shutdown(fd, how)));
+}
+
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> net = ObjectTemplate::New(isolate);
   SET_METHOD(isolate, net, "socket", Socket);
@@ -1180,6 +1192,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, net, "writev", Writev);
   SET_METHOD(isolate, net, "send", Send);
   SET_METHOD(isolate, net, "close", Close);
+  SET_METHOD(isolate, net, "shutdown", Shutdown);
   SET_METHOD(isolate, net, "getsockname", GetSockName);
   SET_METHOD(isolate, net, "getpeername", GetPeerName);
   SET_VALUE(isolate, net, "AF_INET", Integer::New(isolate, AF_INET));
