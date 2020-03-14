@@ -332,16 +332,20 @@ void RunModule(const FunctionCallbackInfo<Value> &args) {
     False(isolate), // is opaque
     False(isolate), // is wasm
     True(isolate)); // is module
-  Local<Module> module;
   ScriptCompiler::Source basescript(source, baseorigin);
-  ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module);
-  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
-    try_catch.ReThrow();
+  Local<Module> module;
+  bool ok = ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module);
+  if (!ok) {
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      try_catch.ReThrow();
+    }
     return;
   }
-  Maybe<bool> ok = module->InstantiateModule(context, OnModuleInstantiate);
-  if (ok.IsNothing() && try_catch.HasCaught() && !try_catch.HasTerminated()) {
-    try_catch.ReThrow();
+  Maybe<bool> ok2 = module->InstantiateModule(context, OnModuleInstantiate);
+  if (ok2.IsNothing()) {
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      try_catch.ReThrow();
+    }
     return;
   }
   MaybeLocal<Value> result = module->Evaluate(context);
@@ -383,9 +387,11 @@ void RunScript(const FunctionCallbackInfo<Value> &args) {
     False(isolate)); // is module
   Local<Script> script;
   ScriptCompiler::Source basescript(source, baseorigin);
-  ScriptCompiler::Compile(context, &basescript).ToLocal(&script);
-  if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
-    try_catch.ReThrow();
+  bool ok = ScriptCompiler::Compile(context, &basescript).ToLocal(&script);
+  if (!ok) {
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      try_catch.ReThrow();
+    }
     return;
   }
   MaybeLocal<Value> result = script->Run(context);

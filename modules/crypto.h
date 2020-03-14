@@ -1,14 +1,15 @@
 #include "just.h"
-#include <mbedtls/md4.h>
-#include <mbedtls/md5.h>
-#include <mbedtls/ripemd160.h>
-#include <mbedtls/sha1.h>
-#include <mbedtls/sha256.h>
-#include <mbedtls/sha512.h>
-#include <mbedtls/md.h>
-#include <mbedtls/version.h>
+#include <openssl/opensslv.h>
+#include <openssl/err.h>
+#include <openssl/dh.h>
+#include <openssl/ssl.h>
+#include <openssl/conf.h>
+#include <openssl/engine.h>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 
 namespace just {
+
 
 namespace crypto {
 
@@ -16,39 +17,41 @@ void Hash(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  const mbedtls_md_info_t* algorithm = mbedtls_md_info_from_type((mbedtls_md_type_t)args[0]->Uint32Value(context).ToChecked());
+  unsigned int digest = args[0]->Uint32Value(context).ToChecked();
   Local<ArrayBuffer> absource = args[1].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> source = absource->GetBackingStore();
   Local<ArrayBuffer> abdest = args[2].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> dest = abdest->GetBackingStore();
   int len = source->ByteLength();
+  unsigned int outlen = 0;
   if (args.Length() > 3) {
     len = args[3]->Uint32Value(context).ToChecked();
   }
-  //todo: buffer overrun
-  int ret = mbedtls_md(algorithm, (const unsigned char*)source->Data(), len, (unsigned char*)dest->Data());
-  args.GetReturnValue().Set(Integer::New(isolate, ret));
+  const EVP_MD* md = EVP_get_digestbynid(digest);
+  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+  EVP_DigestInit_ex(ctx, md, nullptr);
+  EVP_DigestUpdate(ctx, reinterpret_cast<const unsigned char*>(source->Data()), len);
+  EVP_DigestFinal(ctx, (unsigned char*)dest->Data(), &outlen);
+  args.GetReturnValue().Set(Integer::New(isolate, outlen));
 }
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
-  char version_string[256];
-  mbedtls_version_get_string_full(version_string);
-  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, version_string).ToLocalChecked());
+  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, OPENSSL_VERSION_TEXT).ToLocalChecked());
 
-  SET_VALUE(isolate, module, "NONE", Integer::New(isolate, MBEDTLS_MD_NONE));
-  SET_VALUE(isolate, module, "MD2", Integer::New(isolate, MBEDTLS_MD_MD2));
-  SET_VALUE(isolate, module, "MD4", Integer::New(isolate, MBEDTLS_MD_MD4));
-  SET_VALUE(isolate, module, "MD5", Integer::New(isolate, MBEDTLS_MD_MD5));
-  SET_VALUE(isolate, module, "SHA1", Integer::New(isolate, MBEDTLS_MD_SHA1));
-  SET_VALUE(isolate, module, "SHA224", Integer::New(isolate, MBEDTLS_MD_SHA224));
-  SET_VALUE(isolate, module, "SHA256", Integer::New(isolate, MBEDTLS_MD_SHA256));
-  SET_VALUE(isolate, module, "SHA384", Integer::New(isolate, MBEDTLS_MD_SHA384));
-  SET_VALUE(isolate, module, "SHA512", Integer::New(isolate, MBEDTLS_MD_SHA512));
-  SET_VALUE(isolate, module, "RIPEMD160", Integer::New(isolate, MBEDTLS_MD_RIPEMD160));
+  SET_VALUE(isolate, module, "MD5", Integer::New(isolate, OBJ_txt2nid("md5")));
+  SET_VALUE(isolate, module, "SHA1", Integer::New(isolate, OBJ_txt2nid("sha1")));
+  SET_VALUE(isolate, module, "SHA256", Integer::New(isolate, OBJ_txt2nid("sha256")));
+  SET_VALUE(isolate, module, "SHA512", Integer::New(isolate, OBJ_txt2nid("sha512")));
 
   SET_METHOD(isolate, module, "hash", Hash);
   SET_MODULE(isolate, target, "crypto", module);
+
+  EVP_add_digest(EVP_md5());
+  EVP_add_digest(EVP_sha1());
+  EVP_add_digest(EVP_sha256());
+  EVP_add_digest(EVP_sha512());
+
 }
 
 }
