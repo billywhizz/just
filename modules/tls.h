@@ -38,7 +38,6 @@ void Error(const FunctionCallbackInfo<Value> &args) {
 void Shutdown(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
   SSL* ssl = (SSL*)ab->GetAlignedPointerFromInternalField(1);
   args.GetReturnValue().Set(Integer::New(isolate, SSL_shutdown(ssl)));
@@ -47,7 +46,6 @@ void Shutdown(const FunctionCallbackInfo<Value> &args) {
 void Free(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
   SSL* ssl = (SSL*)ab->GetAlignedPointerFromInternalField(1);
   SSL_free(ssl);
@@ -71,7 +69,8 @@ void Read(const FunctionCallbackInfo<Value> &args) {
     off = args[2]->Int32Value(context).ToChecked();
   }
   const char* data = (const char*)buf->Data() + off;
-  args.GetReturnValue().Set(Integer::New(isolate, SSL_read(ssl, (void*)data, len)));
+  args.GetReturnValue().Set(Integer::New(isolate, SSL_read(ssl, 
+    (void*)data, len)));
 }
 
 void Write(const FunctionCallbackInfo<Value> &args) {
@@ -91,13 +90,13 @@ void Write(const FunctionCallbackInfo<Value> &args) {
     off = args[2]->Int32Value(context).ToChecked();
   }
   char* dest = (char*)buf->Data() + off;
-  args.GetReturnValue().Set(Integer::New(isolate, SSL_write(ssl, (void*)dest, len)));
+  args.GetReturnValue().Set(Integer::New(isolate, SSL_write(ssl, 
+    (void*)dest, len)));
 }
 
 void Handshake(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
   Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
   SSL* ssl = (SSL*)ab->GetAlignedPointerFromInternalField(1);
   args.GetReturnValue().Set(Integer::New(isolate, SSL_do_handshake(ssl)));
@@ -185,19 +184,32 @@ void DestroyContext(const FunctionCallbackInfo<Value> &args) {
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
-  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, OPENSSL_VERSION_TEXT).ToLocalChecked());
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_READ", Integer::New(isolate, SSL_ERROR_WANT_READ));
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_WRITE", Integer::New(isolate, SSL_ERROR_WANT_WRITE));
-  SET_VALUE(isolate, module, "SSL_ERROR_SSL", Integer::New(isolate, SSL_ERROR_SSL));
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_X509_LOOKUP", Integer::New(isolate, SSL_ERROR_WANT_X509_LOOKUP));
-  SET_VALUE(isolate, module, "SSL_ERROR_SSL", Integer::New(isolate, SSL_ERROR_SSL));
-  SET_VALUE(isolate, module, "SSL_ERROR_SYSCALL", Integer::New(isolate, SSL_ERROR_SYSCALL));
-  SET_VALUE(isolate, module, "SSL_ERROR_ZERO_RETURN", Integer::New(isolate, SSL_ERROR_ZERO_RETURN));
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_CONNECT", Integer::New(isolate, SSL_ERROR_WANT_CONNECT));
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_ACCEPT", Integer::New(isolate, SSL_ERROR_WANT_ACCEPT));
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_ASYNC", Integer::New(isolate, SSL_ERROR_WANT_ASYNC));
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_ASYNC_JOB", Integer::New(isolate, SSL_ERROR_WANT_ASYNC_JOB));
-  SET_VALUE(isolate, module, "SSL_ERROR_WANT_CLIENT_HELLO_CB", Integer::New(isolate, SSL_ERROR_WANT_CLIENT_HELLO_CB));
+  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, 
+    OPENSSL_VERSION_TEXT).ToLocalChecked());
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_READ", Integer::New(isolate, 
+    SSL_ERROR_WANT_READ));
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_WRITE", Integer::New(isolate, 
+    SSL_ERROR_WANT_WRITE));
+  SET_VALUE(isolate, module, "SSL_ERROR_SSL", Integer::New(isolate, 
+    SSL_ERROR_SSL));
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_X509_LOOKUP", Integer::New(isolate, 
+    SSL_ERROR_WANT_X509_LOOKUP));
+  SET_VALUE(isolate, module, "SSL_ERROR_SSL", Integer::New(isolate, 
+    SSL_ERROR_SSL));
+  SET_VALUE(isolate, module, "SSL_ERROR_SYSCALL", Integer::New(isolate, 
+    SSL_ERROR_SYSCALL));
+  SET_VALUE(isolate, module, "SSL_ERROR_ZERO_RETURN", Integer::New(isolate, 
+    SSL_ERROR_ZERO_RETURN));
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_CONNECT", Integer::New(isolate, 
+    SSL_ERROR_WANT_CONNECT));
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_ACCEPT", Integer::New(isolate, 
+    SSL_ERROR_WANT_ACCEPT));
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_ASYNC", Integer::New(isolate, 
+    SSL_ERROR_WANT_ASYNC));
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_ASYNC_JOB", Integer::New(isolate, 
+    SSL_ERROR_WANT_ASYNC_JOB));
+  SET_VALUE(isolate, module, "SSL_ERROR_WANT_CLIENT_HELLO_CB", 
+    Integer::New(isolate, SSL_ERROR_WANT_CLIENT_HELLO_CB));
   SET_METHOD(isolate, module, "serverContext", ServerContext);
   SET_METHOD(isolate, module, "clientContext", ClientContext);
   SET_METHOD(isolate, module, "destroyContext", DestroyContext);

@@ -173,9 +173,12 @@ function main () {
     const inspectorModule = just.require('inspector')
     if (!inspectorModule) throw new Error('inspector not enabled')
     just.error('waiting for inspector...')
-    global.inspector = inspectorModule.createInspector('127.0.0.1', 9222, () => {
-      just.path.scriptName = just.path.join(sys.cwd(), args[1])
-      vm.runScript(fs.readFile(args[1]), just.path.scriptName)
+    global.inspector = inspectorModule.createInspector({
+      title: 'Just!',
+      onReady: () => {
+        just.path.scriptName = just.path.join(sys.cwd(), args[1])
+        vm.runScript(fs.readFile(args[1]), just.path.scriptName)
+      }
     })
   } else {
     just.path.scriptName = just.path.join(sys.cwd(), args[1])

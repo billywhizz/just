@@ -42,7 +42,8 @@ void Crc32(const FunctionCallbackInfo<Value> &args) {
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
   unsigned int len = args[1]->Uint32Value(context).ToChecked();
   unsigned long crc = args[2]->Uint32Value(context).ToChecked();
-  args.GetReturnValue().Set(Integer::New(isolate, crc32(crc, (const uint8_t *)backing->Data(), len)));
+  args.GetReturnValue().Set(Integer::New(isolate, crc32(crc, 
+    (const uint8_t *)backing->Data(), len)));
 }
 
 void WriteDeflate(const FunctionCallbackInfo<Value> &args) {
@@ -153,7 +154,8 @@ void CreateDeflate(const FunctionCallbackInfo<Value> &args) {
   Local<ArrayBuffer> outab = ArrayBuffer::New(isolate, std::move(out));
   if (argc > 2) compression = args[2]->Uint32Value(context).ToChecked();
   if (argc > 3) windowbits = args[3]->Int32Value(context).ToChecked();
-  err = deflateInit2(stream, compression, Z_DEFLATED, windowbits, Z_DEFAULT_MEMLEVEL, Z_DEFAULT_STRATEGY);
+  err = deflateInit2(stream, compression, Z_DEFLATED, windowbits, 
+    Z_DEFAULT_MEMLEVEL, Z_DEFAULT_STRATEGY);
   stream->next_in = reinterpret_cast<Bytef *>(in->Data());
   stream->avail_in = in->ByteLength();
   stream->next_out = reinterpret_cast<Bytef *>(chunk);
@@ -199,25 +201,34 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, module, "writeInflate", WriteInflate);
   SET_METHOD(isolate, module, "endDeflate", EndDeflate);
   SET_METHOD(isolate, module, "endInflate", EndInflate);
-  SET_VALUE(isolate, module, "Z_NO_FLUSH", Integer::New(isolate, Z_NO_FLUSH));
-  SET_VALUE(isolate, module, "Z_FULL_FLUSH", Integer::New(isolate, Z_FULL_FLUSH));
+  SET_VALUE(isolate, module, "Z_NO_FLUSH", Integer::New(isolate, 
+    Z_NO_FLUSH));
+  SET_VALUE(isolate, module, "Z_FULL_FLUSH", Integer::New(isolate, 
+    Z_FULL_FLUSH));
   SET_VALUE(isolate, module, "Z_FINISH", Integer::New(isolate, Z_FINISH));
-  SET_VALUE(isolate, module, "Z_DEFAULT_COMPRESSION", Integer::New(isolate, Z_DEFAULT_COMPRESSION));
-  SET_VALUE(isolate, module, "Z_BEST_COMPRESSION", Integer::New(isolate, Z_BEST_COMPRESSION));
-  SET_VALUE(isolate, module, "Z_NO_COMPRESSION", Integer::New(isolate, Z_NO_COMPRESSION));
-  SET_VALUE(isolate, module, "Z_BEST_SPEED", Integer::New(isolate, Z_BEST_SPEED));
-  SET_VALUE(isolate, module, "Z_DEFAULT_WINDOW_BITS", Integer::New(isolate, Z_DEFAULT_WINDOW_BITS));
-
+  SET_VALUE(isolate, module, "Z_DEFAULT_COMPRESSION", Integer::New(isolate, 
+    Z_DEFAULT_COMPRESSION));
+  SET_VALUE(isolate, module, "Z_BEST_COMPRESSION", Integer::New(isolate, 
+    Z_BEST_COMPRESSION));
+  SET_VALUE(isolate, module, "Z_NO_COMPRESSION", Integer::New(isolate, 
+    Z_NO_COMPRESSION));
+  SET_VALUE(isolate, module, "Z_BEST_SPEED", Integer::New(isolate, 
+    Z_BEST_SPEED));
+  SET_VALUE(isolate, module, "Z_DEFAULT_WINDOW_BITS", Integer::New(isolate, 
+    Z_DEFAULT_WINDOW_BITS));
   SET_VALUE(isolate, module, "Z_OK", Integer::New(isolate, Z_OK));
-  SET_VALUE(isolate, module, "Z_STREAM_END", Integer::New(isolate, Z_STREAM_END));
+  SET_VALUE(isolate, module, "Z_STREAM_END", Integer::New(isolate, 
+    Z_STREAM_END));
   SET_VALUE(isolate, module, "Z_NEED_DICT", Integer::New(isolate, Z_NEED_DICT));
   SET_VALUE(isolate, module, "Z_ERRNO", Integer::New(isolate, Z_ERRNO));
-  SET_VALUE(isolate, module, "Z_STREAM_ERROR", Integer::New(isolate, Z_STREAM_ERROR));
-  SET_VALUE(isolate, module, "Z_DATA_ERROR", Integer::New(isolate, Z_DATA_ERROR));
+  SET_VALUE(isolate, module, "Z_STREAM_ERROR", Integer::New(isolate, 
+    Z_STREAM_ERROR));
+  SET_VALUE(isolate, module, "Z_DATA_ERROR", Integer::New(isolate, 
+    Z_DATA_ERROR));
   SET_VALUE(isolate, module, "Z_MEM_ERROR", Integer::New(isolate, Z_MEM_ERROR));
   SET_VALUE(isolate, module, "Z_BUF_ERROR", Integer::New(isolate, Z_BUF_ERROR));
-  SET_VALUE(isolate, module, "Z_VERSION_ERROR", Integer::New(isolate, Z_VERSION_ERROR));
-
+  SET_VALUE(isolate, module, "Z_VERSION_ERROR", Integer::New(isolate, 
+    Z_VERSION_ERROR));
   SET_MODULE(isolate, target, "zlib", module);
 }
 

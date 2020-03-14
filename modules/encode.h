@@ -255,7 +255,8 @@ void HexEncode(const FunctionCallbackInfo<Value> &args) {
   if (args.Length() > 2) {
     len = args[2]->Uint32Value(context).ToChecked();
   }
-  size_t bytes = hex_encode((const char*)source->Data(), len, (char*)dest->Data(), dest->ByteLength());
+  size_t bytes = hex_encode((const char*)source->Data(), len, 
+    (char*)dest->Data(), dest->ByteLength());
   args.GetReturnValue().Set(Integer::New(isolate, bytes));
 }
 
@@ -272,7 +273,8 @@ void Base64Encode(const FunctionCallbackInfo<Value> &args) {
     len = args[2]->Uint32Value(context).ToChecked();
   }
   size_t dlen = base64_encoded_size(len);
-  size_t bytes = base64_encode((const char*)source->Data(), len, (char*)dest->Data(), dlen);
+  size_t bytes = base64_encode((const char*)source->Data(), len, 
+    (char*)dest->Data(), dlen);
   args.GetReturnValue().Set(Integer::New(isolate, bytes));
 }
 

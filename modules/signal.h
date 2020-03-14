@@ -74,12 +74,14 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, module, "sigemptyset", SigEmptySet);
   SET_METHOD(isolate, module, "sigaddset", SigAddSet);
   SET_METHOD(isolate, module, "signalfd", SignalFD);
-  SET_VALUE(isolate, module, "SFD_NONBLOCK", Integer::New(isolate, SFD_NONBLOCK));
+  SET_VALUE(isolate, module, "SFD_NONBLOCK", Integer::New(isolate, 
+    SFD_NONBLOCK));
   SET_VALUE(isolate, module, "SFD_CLOEXEC", Integer::New(isolate, SFD_CLOEXEC));
   SET_VALUE(isolate, module, "JUST_SIGSAVE", Integer::New(isolate, 1));
   SET_VALUE(isolate, module, "JUST_SIGLOAD", Integer::New(isolate, 0));
   SET_VALUE(isolate, module, "SIG_BLOCK", Integer::New(isolate, SIG_BLOCK));
-  SET_VALUE(isolate, module, "SIG_SETMASK", Integer::New(isolate, SIG_SETMASK));
+  SET_VALUE(isolate, module, "SIG_SETMASK", Integer::New(isolate, 
+    SIG_SETMASK));
   SET_MODULE(isolate, target, "signal", module);
 }
 

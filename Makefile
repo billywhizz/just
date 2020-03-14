@@ -49,7 +49,6 @@ clean-all: ## clean deps too
 	rm -f builtins.h
 	rm -f *.o
 	rm -f just
-	make -C deps/zlib/ clean
 	make -C deps/openssl-1.1.1d clean
 	
 .DEFAULT_GOAL := help

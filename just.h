@@ -84,7 +84,8 @@ struct builtin {
 
 std::map<std::string, builtin*> builtins;
 
-void just_builtins_add(const char* name, const char* source, unsigned int size) {
+void just_builtins_add(const char* name, const char* source, 
+  unsigned int size) {
   struct builtin* b = new builtin();
   b->size = size;
   b->source = source;
@@ -334,7 +335,8 @@ void RunModule(const FunctionCallbackInfo<Value> &args) {
     True(isolate)); // is module
   ScriptCompiler::Source basescript(source, baseorigin);
   Local<Module> module;
-  bool ok = ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module);
+  bool ok = ScriptCompiler::CompileModule(isolate, 
+    &basescript).ToLocal(&module);
   if (!ok) {
     if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
       try_catch.ReThrow();

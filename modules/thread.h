@@ -18,7 +18,8 @@ static InitModulesCallback initModules;
 
 void* startThread(void *data) {
   threadContext* ctx = (threadContext*)data;
-  just::CreateIsolate(ctx->argc, ctx->argv, initModules, ctx->source, ctx->source_len, &ctx->buf, ctx->fd);
+  just::CreateIsolate(ctx->argc, ctx->argv, initModules, ctx->source, 
+    ctx->source_len, &ctx->buf, ctx->fd);
   free(ctx->source);
   free(ctx);
   return NULL;
@@ -81,7 +82,8 @@ void Join(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(BigInt::New(isolate, (long)tret));
 }
 
-void Init(Isolate* isolate, Local<ObjectTemplate> target, InitModulesCallback InitModules) {
+void Init(Isolate* isolate, Local<ObjectTemplate> target, 
+  InitModulesCallback InitModules) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
   initModules = InitModules;
   SET_METHOD(isolate, module, "spawn", Spawn);

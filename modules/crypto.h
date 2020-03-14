@@ -30,19 +30,25 @@ void Hash(const FunctionCallbackInfo<Value> &args) {
   const EVP_MD* md = EVP_get_digestbynid(digest);
   EVP_MD_CTX* ctx = EVP_MD_CTX_new();
   EVP_DigestInit_ex(ctx, md, nullptr);
-  EVP_DigestUpdate(ctx, reinterpret_cast<const unsigned char*>(source->Data()), len);
+  EVP_DigestUpdate(ctx, reinterpret_cast<const unsigned char*>(
+      source->Data()), len);
   EVP_DigestFinal(ctx, (unsigned char*)dest->Data(), &outlen);
   args.GetReturnValue().Set(Integer::New(isolate, outlen));
 }
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
-  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, OPENSSL_VERSION_TEXT).ToLocalChecked());
+  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, 
+    OPENSSL_VERSION_TEXT).ToLocalChecked());
 
-  SET_VALUE(isolate, module, "MD5", Integer::New(isolate, OBJ_txt2nid("md5")));
-  SET_VALUE(isolate, module, "SHA1", Integer::New(isolate, OBJ_txt2nid("sha1")));
-  SET_VALUE(isolate, module, "SHA256", Integer::New(isolate, OBJ_txt2nid("sha256")));
-  SET_VALUE(isolate, module, "SHA512", Integer::New(isolate, OBJ_txt2nid("sha512")));
+  SET_VALUE(isolate, module, "MD5", Integer::New(isolate, 
+    OBJ_txt2nid("md5")));
+  SET_VALUE(isolate, module, "SHA1", Integer::New(isolate, 
+    OBJ_txt2nid("sha1")));
+  SET_VALUE(isolate, module, "SHA256", Integer::New(isolate, 
+    OBJ_txt2nid("sha256")));
+  SET_VALUE(isolate, module, "SHA512", Integer::New(isolate, 
+    OBJ_txt2nid("sha512")));
 
   SET_METHOD(isolate, module, "hash", Hash);
   SET_MODULE(isolate, target, "crypto", module);
