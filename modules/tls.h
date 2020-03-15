@@ -13,18 +13,6 @@ namespace just {
 
 namespace tls {
 
-enum socketType {
-  SERVER = 0,
-  CLIENT
-};
-
-typedef struct tlsContect tlsContect;
-
-struct httpContext {
-  SSL_CTX* ctx;
-  SSL* ssl;
-};
-
 void Error(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
