@@ -172,8 +172,8 @@ void DestroyContext(const FunctionCallbackInfo<Value> &args) {
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
-  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, 
-    OPENSSL_VERSION_TEXT).ToLocalChecked());
+  SET_VALUE(isolate, module, "version", String::NewFromUtf8Literal(isolate, 
+    OPENSSL_VERSION_TEXT));
   SET_VALUE(isolate, module, "SSL_ERROR_WANT_READ", Integer::New(isolate, 
     SSL_ERROR_WANT_READ));
   SET_VALUE(isolate, module, "SSL_ERROR_WANT_WRITE", Integer::New(isolate, 

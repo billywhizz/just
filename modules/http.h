@@ -72,14 +72,14 @@ void GetRequest(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> request = Object::New(isolate);
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "minorVersion").ToLocalChecked(), Integer::New(isolate, 
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "minorVersion"), Integer::New(isolate, 
     state.minor_version)).Check();
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "url").ToLocalChecked(), String::NewFromUtf8(isolate, state.path, 
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "url"), String::NewFromUtf8(isolate, state.path, 
     NewStringType::kNormal, state.path_len).ToLocalChecked()).Check();
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "method").ToLocalChecked(), String::NewFromUtf8(isolate, state.method, 
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "method"), String::NewFromUtf8(isolate, state.method, 
     NewStringType::kNormal, state.method_len).ToLocalChecked()).Check();
   Local<Object> headers = Object::New(isolate);
   for (size_t i = 0; i < state.num_headers; i++) {
@@ -89,8 +89,8 @@ void GetRequest(const FunctionCallbackInfo<Value> &args) {
       String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
       h->value_len).ToLocalChecked()).Check();
   }
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "headers").ToLocalChecked(), headers).Check();
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "headers"), headers).Check();
   args.GetReturnValue().Set(request);
 }
 
@@ -99,14 +99,14 @@ void GetResponse(const FunctionCallbackInfo<Value> &args) {
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> request = Object::New(isolate);
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "minorVersion").ToLocalChecked(), Integer::New(isolate, 
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "minorVersion"), Integer::New(isolate, 
     state.minor_version)).Check();
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "statusCode").ToLocalChecked(), Integer::New(isolate, 
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "statusCode"), Integer::New(isolate, 
     state.status)).Check();
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "statusMessage").ToLocalChecked(), String::NewFromUtf8(isolate, 
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "statusMessage"), String::NewFromUtf8(isolate, 
     state.status_message, NewStringType::kNormal, 
     state.status_message_len).ToLocalChecked()).Check();
   Local<Object> headers = Object::New(isolate);
@@ -117,8 +117,8 @@ void GetResponse(const FunctionCallbackInfo<Value> &args) {
       String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
       h->value_len).ToLocalChecked()).Check();
   }
-  request->Set(context, String::NewFromUtf8(isolate, 
-    "headers").ToLocalChecked(), headers).Check();
+  request->Set(context, String::NewFromUtf8Literal(isolate, 
+    "headers"), headers).Check();
   args.GetReturnValue().Set(request);
 }
 

@@ -56,8 +56,8 @@ class InspectorFrontend final : public V8Inspector::Channel {
       v8::String::NewFromTwoByte(isolate_, 
       reinterpret_cast<const uint16_t*>(string.characters16()), 
       v8::NewStringType::kNormal, length)).ToLocalChecked();
-    Local<String> callback_name = v8::String::NewFromUtf8(isolate_, "receive", 
-      v8::NewStringType::kNormal).ToLocalChecked();
+    Local<String> callback_name = v8::String::NewFromUtf8Literal(isolate_, 
+      "receive", v8::NewStringType::kNormal);
     Local<Context> context = context_.Get(isolate_);
     Local<Value> callback = context->Global()->Get(context, 
       callback_name).ToLocalChecked();
@@ -87,15 +87,15 @@ class InspectorClient : public V8InspectorClient {
 
     Local<Value> function = FunctionTemplate::New(isolate_, 
       SendInspectorMessage)->GetFunction(context).ToLocalChecked();
-    Local<String> function_name = String::NewFromUtf8(isolate_, 
-      "send", NewStringType::kNormal).ToLocalChecked();
+    Local<String> function_name = String::NewFromUtf8Literal(isolate_, 
+      "send", NewStringType::kNormal);
     context->Global()->Set(context, function_name, function).FromJust();
     context_.Reset(isolate_, context);
   }
 
   void runMessageLoopOnPause(int context_group_id) override {
-    Local<String> callback_name = v8::String::NewFromUtf8(isolate_, 
-      "onRunMessageLoop", v8::NewStringType::kNormal).ToLocalChecked();
+    Local<String> callback_name = v8::String::NewFromUtf8Literal(isolate_, 
+      "onRunMessageLoop", v8::NewStringType::kNormal);
     Local<Context> context = context_.Get(isolate_);
     Local<Value> callback = context->Global()->Get(context, 
       callback_name).ToLocalChecked();
@@ -108,8 +108,8 @@ class InspectorClient : public V8InspectorClient {
   }
 
   void quitMessageLoopOnPause() override {
-    Local<String> callback_name = v8::String::NewFromUtf8(isolate_, 
-      "onQuitMessageLoop", v8::NewStringType::kNormal).ToLocalChecked();
+    Local<String> callback_name = v8::String::NewFromUtf8Literal(isolate_, 
+      "onQuitMessageLoop", v8::NewStringType::kNormal);
     Local<Context> context = context_.Get(isolate_);
     Local<Value> callback = context->Global()->Get(context, 
       callback_name).ToLocalChecked();
@@ -125,7 +125,8 @@ class InspectorClient : public V8InspectorClient {
 
   static V8InspectorSession* GetSession(Local<Context> context) {
     InspectorClient* inspector_client = 
-      static_cast<InspectorClient*>(context->GetAlignedPointerFromEmbedderData(kInspectorClientIndex));
+      static_cast<InspectorClient*>(
+        context->GetAlignedPointerFromEmbedderData(kInspectorClientIndex));
     return inspector_client->session_.get();
   }
 

@@ -38,8 +38,8 @@ void Hash(const FunctionCallbackInfo<Value> &args) {
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
-  SET_VALUE(isolate, module, "version", String::NewFromUtf8(isolate, 
-    OPENSSL_VERSION_TEXT).ToLocalChecked());
+  SET_VALUE(isolate, module, "version", String::NewFromUtf8Literal(isolate, 
+    OPENSSL_VERSION_TEXT));
 
   SET_VALUE(isolate, module, "MD5", Integer::New(isolate, 
     OBJ_txt2nid("md5")));

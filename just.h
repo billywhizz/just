@@ -26,6 +26,7 @@
 
 #define JUST_MAX_HEADERS 32
 #define JUST_MICROS_PER_SEC 1e6
+#define JUST_VERSION "0.0.1"
 
 namespace just {
 
@@ -167,8 +168,9 @@ inline void SET_VALUE(Isolate *isolate, Local<ObjectTemplate>
 Local<String> ReadFile(Isolate *isolate, const char *name) {
   FILE *file = fopen(name, "rb");
   if (file == NULL) {
-    isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, 
-      "Bad File", NewStringType::kNormal).ToLocalChecked()));
+    isolate->ThrowException(Exception::Error(
+      String::NewFromUtf8Literal(isolate, 
+      "Bad File", NewStringType::kNormal)));
     return Local<String>();
   }
   fseek(file, 0, SEEK_END);
@@ -495,7 +497,8 @@ void HRTime(const FunctionCallbackInfo<Value> &args) {
 void RunMicroTasks(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  MicrotasksScope::PerformCheckpoint(isolate);
+  isolate->PerformMicrotaskCheckpoint();
+  //MicrotasksScope::PerformCheckpoint(isolate);
 }
 
 void EnqueueMicrotask(const FunctionCallbackInfo<Value>& args) {
@@ -626,6 +629,76 @@ void MemoryUsage(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(array);
 }
 
+void SharedMemoryUsage(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  v8::SharedMemoryStatistics sm_stats;
+  v8::V8::GetSharedMemoryStatistics(&sm_stats);
+  Local<Object> o = Object::New(isolate);
+  o->Set(context, String::NewFromUtf8Literal(isolate, "readOnlySpaceSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, sm_stats.read_only_space_size())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "readOnlySpaceUsedSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, sm_stats.read_only_space_used_size())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, 
+    "readOnlySpacePhysicalSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, sm_stats.read_only_space_physical_size())).Check();
+  args.GetReturnValue().Set(o);
+}
+
+void HeapObjectStatistics(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  v8::HeapObjectStatistics obj_stats;
+  size_t num_types = isolate->NumberOfTrackedHeapObjectTypes();
+  Local<Object> res = Object::New(isolate);
+  for (size_t i = 0; i < num_types; i++) {
+    bool ok = isolate->GetHeapObjectStatisticsAtLastGC(&obj_stats, i);
+    if (ok) {
+      Local<Object> o = Object::New(isolate);
+      o->Set(context, String::NewFromUtf8Literal(isolate, "subType", 
+        NewStringType::kNormal), 
+        String::NewFromUtf8(isolate, obj_stats.object_sub_type(), 
+        NewStringType::kNormal).ToLocalChecked()).Check();
+      o->Set(context, String::NewFromUtf8Literal(isolate, "count", 
+        NewStringType::kNormal), 
+        Integer::New(isolate, obj_stats.object_count())).Check();
+      o->Set(context, String::NewFromUtf8Literal(isolate, "size", 
+        NewStringType::kNormal), 
+        Integer::New(isolate, obj_stats.object_size())).Check();
+      res->Set(context, 
+        String::NewFromUtf8(isolate, obj_stats.object_type(), 
+        NewStringType::kNormal).ToLocalChecked(),
+        o
+      ).Check();
+    }
+  }
+  args.GetReturnValue().Set(res);
+}
+
+void HeapCodeStatistics(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  v8::HeapCodeStatistics code_stats;
+  isolate->GetHeapCodeAndMetadataStatistics(&code_stats);
+  Local<Object> o = Object::New(isolate);
+  o->Set(context, String::NewFromUtf8Literal(isolate, "codeAndMetadataSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, code_stats.code_and_metadata_size())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "bytecodeAndMetadataSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, code_stats.bytecode_and_metadata_size())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "externalScriptSourceSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, code_stats.external_script_source_size())).Check();
+  args.GetReturnValue().Set(o);
+}
+
 void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
@@ -637,23 +710,47 @@ void HeapSpaceUsage(const FunctionCallbackInfo<Value> &args) {
   HeapStatistics v8_heap_stats;
   isolate->GetHeapStatistics(&v8_heap_stats);
   Local<Object> heaps = Object::New(isolate);
-  o->Set(context, String::NewFromUtf8(isolate, "totalMemory", 
-    NewStringType::kNormal).ToLocalChecked(), 
+  o->Set(context, String::NewFromUtf8Literal(isolate, "totalHeapSize", 
+    NewStringType::kNormal), 
     Integer::New(isolate, v8_heap_stats.total_heap_size())).Check();
-  o->Set(context, String::NewFromUtf8(isolate, "totalCommittedMemory", 
-    NewStringType::kNormal).ToLocalChecked(), 
+  o->Set(context, String::NewFromUtf8Literal(isolate, "totalPhysicalSize", 
+    NewStringType::kNormal), 
     Integer::New(isolate, v8_heap_stats.total_physical_size())).Check();
-  o->Set(context, String::NewFromUtf8(isolate, "usedMemory", 
-    NewStringType::kNormal).ToLocalChecked(), 
+  o->Set(context, String::NewFromUtf8Literal(isolate, "usedHeapSize", 
+    NewStringType::kNormal), 
     Integer::New(isolate, v8_heap_stats.used_heap_size())).Check();
-  o->Set(context, String::NewFromUtf8(isolate, "availableMemory", 
-    NewStringType::kNormal).ToLocalChecked(), 
+  o->Set(context, String::NewFromUtf8Literal(isolate, "totalAvailableSize", 
+    NewStringType::kNormal), 
     Integer::New(isolate, v8_heap_stats.total_available_size())).Check();
-  o->Set(context, String::NewFromUtf8(isolate, "memoryLimit", 
-    NewStringType::kNormal).ToLocalChecked(), 
+  o->Set(context, String::NewFromUtf8Literal(isolate, "heapSizeLimit", 
+    NewStringType::kNormal), 
     Integer::New(isolate, v8_heap_stats.heap_size_limit())).Check();
-  o->Set(context, String::NewFromUtf8(isolate, "heapSpaces", 
-    NewStringType::kNormal).ToLocalChecked(), heaps).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "totalHeapSizeExecutable", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.total_heap_size_executable())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "totalGlobalHandlesSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.total_global_handles_size())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "usedGlobalHandlesSize", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.used_global_handles_size())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "mallocedMemory", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.malloced_memory())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "externalMemory", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.external_memory())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "peakMallocedMemory", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.peak_malloced_memory())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "nativeContexts", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.number_of_native_contexts())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "detachedContexts", 
+    NewStringType::kNormal), 
+    Integer::New(isolate, v8_heap_stats.number_of_detached_contexts())).Check();
+  o->Set(context, String::NewFromUtf8Literal(isolate, "heapSpaces", 
+    NewStringType::kNormal), heaps).Check();
   for (size_t i = 0; i < number_of_heap_spaces; i++) {
     isolate->GetHeapSpaceStatistics(&s, i);
     Local<Float64Array> array = spaces->Get(context, i)
@@ -868,6 +965,9 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "timer", Timer);
   SET_METHOD(isolate, sys, "memoryUsage", MemoryUsage);
   SET_METHOD(isolate, sys, "heapUsage", HeapSpaceUsage);
+  SET_METHOD(isolate, sys, "sharedMemoryUsage", SharedMemoryUsage);
+  SET_METHOD(isolate, sys, "heapObjectStatistics", HeapObjectStatistics);
+  SET_METHOD(isolate, sys, "heapCodeStatistics", HeapCodeStatistics);
   SET_METHOD(isolate, sys, "pid", PID);
   SET_METHOD(isolate, sys, "errno", Errno);
   SET_METHOD(isolate, sys, "strerror", StrError);
@@ -884,11 +984,14 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "nanosleep", NanoSleep);
   SET_VALUE(isolate, sys, "CLOCK_MONOTONIC", Integer::New(isolate, 
     CLOCK_MONOTONIC));
-  SET_VALUE(isolate, sys, "TFD_NONBLOCK", Integer::New(isolate, TFD_NONBLOCK));
-  SET_VALUE(isolate, sys, "TFD_CLOEXEC", Integer::New(isolate, TFD_CLOEXEC));
+  SET_VALUE(isolate, sys, "TFD_NONBLOCK", Integer::New(isolate, 
+    TFD_NONBLOCK));
+  SET_VALUE(isolate, sys, "TFD_CLOEXEC", Integer::New(isolate, 
+    TFD_CLOEXEC));
   SET_VALUE(isolate, sys, "F_GETFL", Integer::New(isolate, F_GETFL));
   SET_VALUE(isolate, sys, "F_SETFL", Integer::New(isolate, F_SETFL));
-  SET_VALUE(isolate, sys, "STDIN_FILENO", Integer::New(isolate, STDIN_FILENO));
+  SET_VALUE(isolate, sys, "STDIN_FILENO", Integer::New(isolate, 
+    STDIN_FILENO));
   SET_VALUE(isolate, sys, "STDOUT_FILENO", Integer::New(isolate, 
     STDOUT_FILENO));
   SET_VALUE(isolate, sys, "STDERR_FILENO", Integer::New(isolate, 
@@ -1418,20 +1521,20 @@ void Readdir(const FunctionCallbackInfo<Value> &args) {
   int i = 0;
   while (entry) {
     Local<Object> o = Object::New(isolate);
-    o->Set(context, String::NewFromUtf8(isolate, "name", 
-      NewStringType::kNormal).ToLocalChecked(), 
+    o->Set(context, String::NewFromUtf8Literal(isolate, "name", 
+      NewStringType::kNormal), 
       String::NewFromUtf8(isolate, entry->d_name).ToLocalChecked()).Check();
-    o->Set(context, String::NewFromUtf8(isolate, "type", 
-      NewStringType::kNormal).ToLocalChecked(), 
+    o->Set(context, String::NewFromUtf8Literal(isolate, "type", 
+      NewStringType::kNormal), 
       Integer::New(isolate, entry->d_type)).Check();
-    o->Set(context, String::NewFromUtf8(isolate, "ino", 
-      NewStringType::kNormal).ToLocalChecked(), 
+    o->Set(context, String::NewFromUtf8Literal(isolate, "ino", 
+      NewStringType::kNormal), 
       Integer::New(isolate, entry->d_ino)).Check();
-    o->Set(context, String::NewFromUtf8(isolate, "off", 
-      NewStringType::kNormal).ToLocalChecked(), 
+    o->Set(context, String::NewFromUtf8Literal(isolate, "off", 
+      NewStringType::kNormal), 
       Integer::New(isolate, entry->d_off)).Check();
-    o->Set(context, String::NewFromUtf8(isolate, "reclen", 
-      NewStringType::kNormal).ToLocalChecked(), 
+    o->Set(context, String::NewFromUtf8Literal(isolate, "reclen", 
+      NewStringType::kNormal), 
         Integer::New(isolate, entry->d_reclen)).Check();
     answer->Set(context, i++, o).Check();
     entry = readdir(directory);
@@ -1502,8 +1605,8 @@ namespace versions {
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> versions = ObjectTemplate::New(isolate);
-  SET_VALUE(isolate, versions, "just", String::NewFromUtf8(isolate, 
-    "0.0.1").ToLocalChecked());
+  SET_VALUE(isolate, versions, "just", String::NewFromUtf8Literal(isolate, 
+    JUST_VERSION));
   SET_VALUE(isolate, versions, "v8", String::NewFromUtf8(isolate, 
     v8::V8::GetVersion()).ToLocalChecked());
   SET_VALUE(isolate, versions, "glibc", String::NewFromUtf8(isolate, 
@@ -1512,18 +1615,18 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   utsname kernel_rec;
   int rc = uname(&kernel_rec);
   if (rc == 0) {
-    kernel->Set(String::NewFromUtf8(isolate, "os", 
-      NewStringType::kNormal).ToLocalChecked(), String::NewFromUtf8(isolate, 
+    kernel->Set(String::NewFromUtf8Literal(isolate, "os", 
+      NewStringType::kNormal), String::NewFromUtf8(isolate, 
       kernel_rec.sysname).ToLocalChecked());
-    kernel->Set(String::NewFromUtf8(isolate, "release", 
-      NewStringType::kNormal).ToLocalChecked(), String::NewFromUtf8(isolate, 
+    kernel->Set(String::NewFromUtf8Literal(isolate, "release", 
+      NewStringType::kNormal), String::NewFromUtf8(isolate, 
       kernel_rec.release).ToLocalChecked());
-    kernel->Set(String::NewFromUtf8(isolate, "version", 
-      NewStringType::kNormal).ToLocalChecked(), String::NewFromUtf8(isolate, 
+    kernel->Set(String::NewFromUtf8Literal(isolate, "version", 
+      NewStringType::kNormal), String::NewFromUtf8(isolate, 
       kernel_rec.version).ToLocalChecked());
   }
-  versions->Set(String::NewFromUtf8(isolate, "kernel", 
-    NewStringType::kNormal).ToLocalChecked(), kernel);
+  versions->Set(String::NewFromUtf8Literal(isolate, "kernel", 
+    NewStringType::kNormal), kernel);
   SET_MODULE(isolate, target, "versions", versions);
 }
 
@@ -1587,8 +1690,8 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
 
     InitModules(isolate, just);
 
-    global->Set(String::NewFromUtf8(isolate, "just", 
-      NewStringType::kNormal).ToLocalChecked(), just);
+    global->Set(String::NewFromUtf8Literal(isolate, "just", 
+      NewStringType::kNormal), just);
 
     Local<Context> context = Context::New(isolate, NULL, global);
     Context::Scope context_scope(context);
@@ -1600,11 +1703,13 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
         NewStringType::kNormal, strlen(argv[i])).ToLocalChecked()).Check();
     }
     Local<Object> globalInstance = context->Global();
-    globalInstance->Set(context, String::NewFromUtf8(isolate, "global", 
-      NewStringType::kNormal).ToLocalChecked(), globalInstance).Check();
-    Local<Value> obj = globalInstance->Get(context, String::NewFromUtf8(
+    globalInstance->Set(context, String::NewFromUtf8Literal(isolate, 
+      "global", 
+      NewStringType::kNormal), globalInstance).Check();
+    Local<Value> obj = globalInstance->Get(context, 
+      String::NewFromUtf8Literal(
         isolate, "just", 
-        NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
+        NewStringType::kNormal)).ToLocalChecked();
     Local<Object> justInstance = Local<Object>::Cast(obj);
     if (buf != NULL) {
       std::unique_ptr<BackingStore> backing =
@@ -1612,27 +1717,26 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
           just::sys::FreeMemory, nullptr);
       Local<SharedArrayBuffer> ab =
           SharedArrayBuffer::New(isolate, std::move(backing));
-      justInstance->Set(context, String::NewFromUtf8(isolate, "buffer", 
-        NewStringType::kNormal).ToLocalChecked(), ab).Check();
+      justInstance->Set(context, String::NewFromUtf8Literal(isolate, 
+        "buffer", NewStringType::kNormal), ab).Check();
     }
     if (fd != 0) {
-      justInstance->Set(context, String::NewFromUtf8(isolate, "fd", 
-        NewStringType::kNormal).ToLocalChecked(), 
+      justInstance->Set(context, String::NewFromUtf8Literal(isolate, "fd", 
+        NewStringType::kNormal), 
         Integer::New(isolate, fd)).Check();
     }
-    justInstance->Set(context, String::NewFromUtf8(isolate, "args", 
-      NewStringType::kNormal).ToLocalChecked(), arguments).Check();
+    justInstance->Set(context, String::NewFromUtf8Literal(isolate, "args", 
+      NewStringType::kNormal), arguments).Check();
     if (js_len > 0) {
-      justInstance->Set(context, String::NewFromUtf8(isolate, "workerSource", 
-        NewStringType::kNormal).ToLocalChecked(), 
+      justInstance->Set(context, String::NewFromUtf8Literal(isolate, 
+        "workerSource", NewStringType::kNormal), 
         String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
         js_len).ToLocalChecked()).Check();
     }
-    const char* scriptName = "just.js";
     TryCatch try_catch(isolate);
     ScriptOrigin baseorigin(
-      String::NewFromUtf8(isolate, scriptName, 
-      NewStringType::kNormal).ToLocalChecked(), // resource name
+      String::NewFromUtf8Literal(isolate, "just.js", 
+      NewStringType::kNormal), // resource name
       Integer::New(isolate, 0), // line offset
       Integer::New(isolate, 0),  // column offset
       False(isolate), // is shared cross-origin
@@ -1671,8 +1775,8 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     }
 
     Local<Value> func = globalInstance->Get(context, 
-      String::NewFromUtf8(isolate, "onExit", 
-        NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
+      String::NewFromUtf8Literal(isolate, "onExit", 
+        NewStringType::kNormal)).ToLocalChecked();
     if (func->IsFunction()) {
       Local<Function> onExit = Local<Function>::Cast(func);
       Local<Value> argv[0] = { };
