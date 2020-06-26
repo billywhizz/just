@@ -31,4 +31,4 @@ deps/openssl-1.1.1d/crypto/**/*.s
 deps/openssl-1.1.1d/crypto/include/internal/bn_conf.h
 deps/openssl-1.1.1d/crypto/include/internal/dso_conf.h
 deps/openssl-1.1.1d/include/openssl/opensslconf.h
-examples
+*.pem
