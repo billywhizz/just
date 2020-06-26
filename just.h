@@ -75,6 +75,9 @@ using v8::V8;
 using v8::BackingStore;
 using v8::BackingStoreDeleterCallback;
 using v8::SharedArrayBuffer;
+using v8::PromiseRejectMessage;
+using v8::Promise;
+using v8::PromiseRejectEvent;
 
 typedef void    (*InitModulesCallback) (Isolate*, Local<ObjectTemplate>);
 
@@ -523,6 +526,12 @@ void Kill(const FunctionCallbackInfo<Value>& args) {
   int signum = args[1]->Int32Value(context).ToChecked();
   args.GetReturnValue().Set(Integer::New(isolate, kill(pid, signum)));
 }
+
+//TODO: CPU Info:
+/*
+https://github.com/nodejs/node/blob/4438852aa16689b841e5ffbca4a24fc36a0fe33c/src/node_os.cc#L101
+https://github.com/libuv/libuv/blob/c70dd705bc2adc488ddffcdc12f0c610d116e77b/src/unix/linux-core.c#L610
+*/
 
 void CPUUsage(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
@@ -1655,6 +1664,39 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
 
 }
 
+void PromiseRejectCallback(PromiseRejectMessage message) {
+  Local<Promise> promise = message.GetPromise();
+  Isolate* isolate = promise->GetIsolate();
+  HandleScope handle_scope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  PromiseRejectEvent event = message.GetEvent();
+  const unsigned int argc = 3;
+  Local<Object> globalInstance = context->Global();
+  TryCatch try_catch(isolate);
+  Local<Value> func = globalInstance->Get(context, 
+    String::NewFromUtf8Literal(isolate, "onUnhandledRejection", 
+      NewStringType::kNormal)).ToLocalChecked();
+  if (try_catch.HasCaught()) {
+    fprintf(stderr, "PromiseRejectCallback: Get\n");
+    //dv8::ReportException(isolate, &try_catch);
+    return;
+  }
+  Local<Function> onUnhandledRejection = Local<Function>::Cast(func);
+  if (try_catch.HasCaught()) {
+    fprintf(stderr, "PromiseRejectCallback: Cast\n");
+    //dv8::ReportException(isolate, &try_catch);
+    return;
+  }
+  Local<Value> value = message.GetValue();
+  if (value.IsEmpty()) value = Undefined(isolate);
+  Local<Value> argv[argc] = { promise, value, Integer::New(isolate, event) };
+  onUnhandledRejection->Call(context, globalInstance, 3, argv);
+  if (try_catch.HasCaught()) {
+    fprintf(stderr, "PromiseRejectCallback: Call\n");
+    //dv8::ReportException(isolate, &try_catch);
+  }
+}
+
 void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   vm::Init(isolate, just);
   tty::Init(isolate, just);
@@ -1696,7 +1738,7 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
     Local<Context> context = Context::New(isolate, NULL, global);
     Context::Scope context_scope(context);
     context->AllowCodeGenerationFromStrings(false);
-
+    isolate->SetPromiseRejectCallback(PromiseRejectCallback);
     Local<Array> arguments = Array::New(isolate);
     for (int i = 0; i < argc; i++) {
       arguments->Set(context, i, String::NewFromUtf8(isolate, argv[i], 

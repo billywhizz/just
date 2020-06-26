@@ -1,4 +1,5 @@
 #include "just.h"
+#ifndef JUST_MIN
 #include "modules/thread.h"
 #include "modules/signal.h"
 #include "modules/udp.h"
@@ -9,6 +10,7 @@
 #include "modules/inspector.h"
 #include "modules/crypto.h"
 #include "modules/encode.h"
+#endif
 
 namespace just {
 
@@ -18,6 +20,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   // c++ runtime
   // initialize the default modules
   just::InitModules(isolate, just);
+#ifndef JUST_MIN
   // required by inspector
   http::Init(isolate, just);
   inspector::Init(isolate, just);
@@ -29,14 +32,6 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   udp::Init(isolate, just);
   zlib::Init(isolate, just);
   tls::Init(isolate, just);
-  // js runtime
-  // main script js
-  just_builtins_add("just", just_js, just_js_len);
-  // required by main
-  just_builtins_add("path", lib_path_js, lib_path_js_len);
-  just_builtins_add("loop", lib_loop_js, lib_loop_js_len);
-  // if you omit this the will only be possible to require builtins
-  just_builtins_add("require", lib_require_js, lib_require_js_len);
   // required for repl capability
   just_builtins_add("repl", lib_repl_js, lib_repl_js_len);
   // required for debugging onlu
@@ -46,6 +41,14 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   just_builtins_add("fs", lib_fs_js, lib_fs_js_len);
   just_builtins_add("wasm", lib_wasm_js, lib_wasm_js_len);
   just_builtins_add("libwabt", lib_libwabt_js, lib_libwabt_js_len);
+#endif
+  // main script js
+  just_builtins_add("just", just_js, just_js_len);
+  // required by main
+  just_builtins_add("path", lib_path_js, lib_path_js_len);
+  just_builtins_add("loop", lib_loop_js, lib_loop_js_len);
+  // if you omit this the will only be possible to require builtins
+  just_builtins_add("require", lib_require_js, lib_require_js_len);
 }
 
 int Start(int argc, char** argv) {
