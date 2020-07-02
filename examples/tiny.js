@@ -2,6 +2,7 @@ function onListenEvent (fd, event) {
   if (event & EPOLLERR || event & EPOLLHUP) {
     delete buffers[fd]
     net.close(fd)
+    conn--
     return
   }
   const clientfd = net.accept(fd)
@@ -19,6 +20,7 @@ function onListenEvent (fd, event) {
 
 function onSocketEvent (fd, event) {
   if (event & EPOLLERR || event & EPOLLHUP) {
+    delete buffers[fd]
     net.close(fd)
     conn--
     return
@@ -33,7 +35,7 @@ function onSocketEvent (fd, event) {
     counts[count] = counts[count] ? counts[count] + 1 : 1
     if (count > 0) {
       rps += count
-      net.send(fd, buf, size * count)
+      wps += net.send(fd, buf, size * count)
     }
     if (answer[0] > 0) {
       const start = buffer.offset + bytes - answer[0]
@@ -68,13 +70,12 @@ function onTimer () {
   const upc = ((user - last.user) / 1000000).toFixed(2)
   const spc = ((system - last.system) / 1000000).toFixed(2)
   if (rps > max) max = rps
-  just.print(`rps ${rps} max ${max} mem ${rss} conn ${conn} cpu ${upc} / ${spc} Gbps ${((bps * 8) / bw).toFixed(2)}`)
+  just.print(`rps ${rps} max ${max} mem ${rss} conn ${conn} cpu ${upc} / ${spc} Gbps  r ${((bps * 8) / bw).toFixed(2)} w ${((wps * 8) / bw).toFixed(2)}`)
   rps = 0
   last.user = user
   last.system = system
   bps = 0
-  just.print(JSON.stringify(reads))
-  just.print(JSON.stringify(counts))
+  wps = 0
 }
 
 const { sys, net, http, memoryUsage, cpuUsage } = just
@@ -92,6 +93,7 @@ const responses = {
 }
 let rps = 0
 let bps = 0
+let wps = 0
 let conn = 0
 const { loop } = just.factory
 const last = { user: 0, system: 0 }
