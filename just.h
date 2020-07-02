@@ -1209,15 +1209,19 @@ void Recv(const FunctionCallbackInfo<Value> &args) {
   int argc = args.Length();
   int flags = 0;
   int off = 0;
+  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  int len = backing->ByteLength() - off;
   if (argc > 2) {
     off = args[2]->Int32Value(context).ToChecked();
   }
   if (argc > 3) {
-    flags = args[3]->Int32Value(context).ToChecked();
+    len = args[3]->Int32Value(context).ToChecked();
   }
-  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  if (argc > 4) {
+    flags = args[4]->Int32Value(context).ToChecked();
+  }
   const char* data = (const char*)backing->Data() + off;
-  int r = recv(fd, (void*)data, backing->ByteLength() - off, flags);
+  int r = recv(fd, (void*)data, len, flags);
   args.GetReturnValue().Set(Integer::New(isolate, r));
 }
 

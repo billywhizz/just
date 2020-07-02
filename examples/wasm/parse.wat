@@ -1,5 +1,5 @@
 (module
-  (import "js" "memory" (memory 20)) ;; 20 x 64k = 1310720 bytes. 1MB (1048576) for data, 256k (262144) for offsets
+  (import "js" "memory" (memory 2)) ;; 20 x 64k = 1310720 bytes. 1MB (1048576) for data, 256k (262144) for offsets
   (func (export "parse") (param $off i32) (param $end i32) (result i32)
     (local $offsets i32)
     (local $target i32)

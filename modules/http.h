@@ -7,6 +7,8 @@ namespace just {
 namespace http {
 typedef struct httpContext httpContext;
 
+#define MAX_PIPELINE 256
+
 struct httpContext {
   int minor_version;
   int status;
@@ -23,42 +25,71 @@ struct httpContext {
   const char* status_message;
 };
 
-httpContext state;
+httpContext state[MAX_PIPELINE];
 
 void GetUrl(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state.path, 
-    NewStringType::kNormal, state.path_len).ToLocalChecked());
+  Local<Context> context = isolate->GetCurrentContext();
+  int index = 0;
+  int argc = args.Length();
+  if (argc > 0) {
+    index = args[0]->Int32Value(context).ToChecked();
+  }
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state[index].path, 
+    NewStringType::kNormal, state[index].path_len).ToLocalChecked());
 }
 
 void GetMethod(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state.method, 
-    NewStringType::kNormal, state.method_len).ToLocalChecked());
+  Local<Context> context = isolate->GetCurrentContext();
+  int index = 0;
+  int argc = args.Length();
+  if (argc > 0) {
+    index = args[0]->Int32Value(context).ToChecked();
+  }
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state[index].method, 
+    NewStringType::kNormal, state[index].method_len).ToLocalChecked());
 }
 
 void GetStatusCode(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  args.GetReturnValue().Set(Integer::New(isolate, state.status));
+  Local<Context> context = isolate->GetCurrentContext();
+  int index = 0;
+  int argc = args.Length();
+  if (argc > 0) {
+    index = args[0]->Int32Value(context).ToChecked();
+  }
+  args.GetReturnValue().Set(Integer::New(isolate, state[index].status));
 }
 
 void GetStatusMessage(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
-  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state.status_message, 
-    NewStringType::kNormal, state.status_message_len).ToLocalChecked());
+  Local<Context> context = isolate->GetCurrentContext();
+  int index = 0;
+  int argc = args.Length();
+  if (argc > 0) {
+    index = args[0]->Int32Value(context).ToChecked();
+  }
+  args.GetReturnValue().Set(String::NewFromUtf8(isolate, state[index].status_message, 
+    NewStringType::kNormal, state[index].status_message_len).ToLocalChecked());
 }
 
 void GetHeaders(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
+  int index = 0;
+  int argc = args.Length();
+  if (argc > 0) {
+    index = args[0]->Int32Value(context).ToChecked();
+  }
   Local<Object> headers = Object::New(isolate);
-  for (size_t i = 0; i < state.num_headers; i++) {
-    struct phr_header* h = &state.headers[i];
+  for (size_t i = 0; i < state[index].num_headers; i++) {
+    struct phr_header* h = &state[index].headers[i];
     headers->Set(context, String::NewFromUtf8(isolate, h->name, 
       NewStringType::kNormal, h->name_len).ToLocalChecked(), 
       String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
@@ -67,62 +98,91 @@ void GetHeaders(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(headers);
 }
 
-void GetRequest(const FunctionCallbackInfo<Value> &args) {
+void GetRequests(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  Local<Object> request = Object::New(isolate);
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "minorVersion"), Integer::New(isolate, 
-    state.minor_version)).Check();
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "url"), String::NewFromUtf8(isolate, state.path, 
-    NewStringType::kNormal, state.path_len).ToLocalChecked()).Check();
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "method"), String::NewFromUtf8(isolate, state.method, 
-    NewStringType::kNormal, state.method_len).ToLocalChecked()).Check();
-  Local<Object> headers = Object::New(isolate);
-  for (size_t i = 0; i < state.num_headers; i++) {
-    struct phr_header* h = &state.headers[i];
-    headers->Set(context, String::NewFromUtf8(isolate, h->name, 
-      NewStringType::kNormal, h->name_len).ToLocalChecked(), 
-      String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
-      h->value_len).ToLocalChecked()).Check();
+  int count = 1;
+  int start = 0;
+  int argc = args.Length();
+  if (argc > 0) {
+    count = args[0]->Int32Value(context).ToChecked();
   }
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "headers"), headers).Check();
-  args.GetReturnValue().Set(request);
+  if (argc > 1) {
+    start = args[1]->Int32Value(context).ToChecked();
+  }
+  Local<Array> requests = Array::New(isolate);
+  for (int index = start; index < count; index++) {
+    Local<Object> request = Object::New(isolate);
+    request->Set(context, String::NewFromUtf8Literal(isolate, 
+      "url"), String::NewFromUtf8(isolate, state[index].path, 
+      NewStringType::kNormal, state[index].path_len).ToLocalChecked()).Check();
+    request->Set(context, String::NewFromUtf8Literal(isolate, 
+      "minorVersion"), Integer::New(isolate, 
+      state[index].minor_version)).Check();
+    request->Set(context, String::NewFromUtf8Literal(isolate, 
+      "url"), String::NewFromUtf8(isolate, state[index].path, 
+      NewStringType::kNormal, state[index].path_len).ToLocalChecked()).Check();
+    request->Set(context, String::NewFromUtf8Literal(isolate, 
+      "method"), String::NewFromUtf8(isolate, state[index].method, 
+      NewStringType::kNormal, state[index].method_len).ToLocalChecked()).Check();
+    Local<Object> headers = Object::New(isolate);
+    for (size_t i = 0; i < state[index].num_headers; i++) {
+      struct phr_header* h = &state[index].headers[i];
+      headers->Set(context, String::NewFromUtf8(isolate, h->name, 
+        NewStringType::kNormal, h->name_len).ToLocalChecked(), 
+        String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
+        h->value_len).ToLocalChecked()).Check();
+    }
+    request->Set(context, String::NewFromUtf8Literal(isolate, 
+      "headers"), headers).Check();
+    requests->Set(context, index, request).Check();
+  }
+  args.GetReturnValue().Set(requests);
 }
 
-void GetResponse(const FunctionCallbackInfo<Value> &args) {
+void GetResponses(const FunctionCallbackInfo<Value> &args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
-  Local<Object> request = Object::New(isolate);
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "minorVersion"), Integer::New(isolate, 
-    state.minor_version)).Check();
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "statusCode"), Integer::New(isolate, 
-    state.status)).Check();
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "statusMessage"), String::NewFromUtf8(isolate, 
-    state.status_message, NewStringType::kNormal, 
-    state.status_message_len).ToLocalChecked()).Check();
-  Local<Object> headers = Object::New(isolate);
-  for (size_t i = 0; i < state.num_headers; i++) {
-    struct phr_header* h = &state.headers[i];
-    headers->Set(context, String::NewFromUtf8(isolate, h->name, 
-      NewStringType::kNormal, h->name_len).ToLocalChecked(), 
-      String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
-      h->value_len).ToLocalChecked()).Check();
+  int count = 1;
+  int start = 0;
+  int argc = args.Length();
+  if (argc > 0) {
+    count = args[0]->Int32Value(context).ToChecked();
   }
-  request->Set(context, String::NewFromUtf8Literal(isolate, 
-    "headers"), headers).Check();
-  args.GetReturnValue().Set(request);
+  if (argc > 1) {
+    start = args[1]->Int32Value(context).ToChecked();
+  }
+  Local<Array> responses = Array::New(isolate);
+  for (int index = start; index < count; index++) {
+    Local<Object> response = Object::New(isolate);
+    response->Set(context, String::NewFromUtf8Literal(isolate, 
+      "minorVersion"), Integer::New(isolate, 
+      state[index].minor_version)).Check();
+    response->Set(context, String::NewFromUtf8Literal(isolate, 
+      "statusCode"), Integer::New(isolate, 
+      state[index].status)).Check();
+    response->Set(context, String::NewFromUtf8Literal(isolate, 
+      "statusMessage"), String::NewFromUtf8(isolate, 
+      state[index].status_message, NewStringType::kNormal, 
+      state[index].status_message_len).ToLocalChecked()).Check();
+    Local<Object> headers = Object::New(isolate);
+    for (size_t i = 0; i < state[index].num_headers; i++) {
+      struct phr_header* h = &state[index].headers[i];
+      headers->Set(context, String::NewFromUtf8(isolate, h->name, 
+        NewStringType::kNormal, h->name_len).ToLocalChecked(), 
+        String::NewFromUtf8(isolate, h->value, NewStringType::kNormal, 
+        h->value_len).ToLocalChecked()).Check();
+    }
+    response->Set(context, String::NewFromUtf8Literal(isolate, 
+      "headers"), headers).Check();
+    responses->Set(context, index, response).Check();
+  }
+  args.GetReturnValue().Set(responses);
 }
 
-void ParseRequest(const FunctionCallbackInfo<Value> &args) {
+void ParseRequests(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
@@ -135,50 +195,29 @@ void ParseRequest(const FunctionCallbackInfo<Value> &args) {
   }
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
   char* next = (char*)backing->Data() + off;
-  state.num_headers = JUST_MAX_HEADERS;
-  ssize_t nread = phr_parse_request(next, bytes, (const char **)&state.method, 
-    &state.method_len, (const char **)&state.path, &state.path_len, 
-    &state.minor_version, state.headers, &state.num_headers, 0);
-  args.GetReturnValue().Set(Integer::New(isolate, nread));
-}
-/*
-void ParseRequest2(const FunctionCallbackInfo<Value> &args) {
-  Isolate *isolate = args.GetIsolate();
-  HandleScope handleScope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
-  Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
-  size_t bytes = args[1]->Int32Value(context).ToChecked();
-  int argc = args.Length();
-  size_t off = 0;
-  if (argc > 2) {
-    off = args[2]->Int32Value(context).ToChecked();
-  }
-  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
-  const char* next = (const char*)backing->Data() + off;
-  const char* needle = "\r\n\r\n";
-  uint32_t* offsets = (uint32_t*)backing->Data();
-  int nlen = 4;
-  size_t end = bytes + off;
-  __m128i needle16 = _mm_loadu_si128((const __m128i *)needle);
   int count = 0;
-  int orig = off;
-  int r = 0;
-  __m128i haystack16;
-  while (off < end) {
-    haystack16 = _mm_loadu_si128((const __m128i *)next);
-    r = _mm_cmpestri(needle16, nlen, haystack16, 16, _SIDD_CMP_EQUAL_ORDERED | _SIDD_UBYTE_OPS);
-    if (r < (16 - nlen)) {
-      offsets[count++] = r + off + nlen;
-    }
-    off += 16 - nlen;
-    next += 16 - nlen;
+  state[count].num_headers = JUST_MAX_HEADERS;
+  //TODO: buffer overrun
+  ssize_t nread = phr_parse_request(next, bytes, (const char **)&state[count].method, 
+    &state[count].method_len, (const char **)&state[count].path, &state[count].path_len, 
+    &state[count].minor_version, state[count].headers, &state[count].num_headers, 0);
+  while (nread > -1) {
+    count++;
+    next += nread;
+    bytes -= nread;
+    state[count].num_headers = JUST_MAX_HEADERS;
+    nread = phr_parse_request(next, bytes, (const char **)&state[count].method, 
+      &state[count].method_len, (const char **)&state[count].path, &state[count].path_len, 
+      &state[count].minor_version, state[count].headers, &state[count].num_headers, 0);
   }
-  offsets[count] = orig + bytes;
+  if (argc > 3) {
+    Local<Array> answer = args[3].As<Array>();
+    answer->Set(context, 0, Integer::New(isolate, bytes)).Check();
+  }
   args.GetReturnValue().Set(Integer::New(isolate, count));
 }
-*/
 
-void ParseResponse(const FunctionCallbackInfo<Value> &args) {
+void ParseResponses(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   HandleScope handleScope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
@@ -191,24 +230,40 @@ void ParseResponse(const FunctionCallbackInfo<Value> &args) {
   }
   std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
   char* next = (char*)backing->Data() + off;
-  state.num_headers = JUST_MAX_HEADERS;
-  ssize_t nread = phr_parse_response(next, bytes, &state.minor_version, 
-    &state.status, (const char **)&state.status_message, 
-    &state.status_message_len, state.headers, &state.num_headers, 0);
-  args.GetReturnValue().Set(Integer::New(isolate, nread));
+  int count = 0;
+  state[count].num_headers = JUST_MAX_HEADERS;
+  //TODO: buffer overrun
+  ssize_t nread = phr_parse_response(next, bytes, &state[count].minor_version, 
+    &state[count].status, (const char **)&state[count].status_message, 
+    &state[count].status_message_len, state[count].headers, &state[count].num_headers, 0);
+  while (nread > -1) {
+    count++;
+    next += nread;
+    bytes -= nread;
+    state[count].num_headers = JUST_MAX_HEADERS;
+    nread = phr_parse_response(next, bytes, &state[count].minor_version, 
+      &state[count].status, (const char **)&state[count].status_message, 
+      &state[count].status_message_len, state[count].headers, &state[count].num_headers, 0);
+  }
+  if (argc > 3) {
+    Local<Array> answer = args[3].As<Array>();
+    answer->Set(context, 0, Integer::New(isolate, bytes)).Check();
+  }
+  args.GetReturnValue().Set(Integer::New(isolate, count));
 }
 
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> http = ObjectTemplate::New(isolate);
-  SET_METHOD(isolate, http, "parseRequest", ParseRequest);
-  SET_METHOD(isolate, http, "parseResponse", ParseResponse);
+  SET_METHOD(isolate, http, "parseRequests", ParseRequests);
+  SET_METHOD(isolate, http, "parseResponses", ParseResponses);
   SET_METHOD(isolate, http, "getUrl", GetUrl);
   SET_METHOD(isolate, http, "getStatusCode", GetStatusCode);
   SET_METHOD(isolate, http, "getStatusMessage", GetStatusMessage);
   SET_METHOD(isolate, http, "getMethod", GetMethod);
   SET_METHOD(isolate, http, "getHeaders", GetHeaders);
-  SET_METHOD(isolate, http, "getRequest", GetRequest);
-  SET_METHOD(isolate, http, "getResponse", GetResponse);
+  SET_METHOD(isolate, http, "getRequests", GetRequests);
+  SET_METHOD(isolate, http, "getResponses", GetResponses);
+  SET_VALUE(isolate, http, "MAX_PIPELINE", Integer::New(isolate, MAX_PIPELINE));
   SET_MODULE(isolate, target, "http", http);
 }
 

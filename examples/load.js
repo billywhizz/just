@@ -1,6 +1,6 @@
 const { createClient } = just.require('./lib/net.js')
 const { loop } = just.factory
-const { sys, setTimeout, setInterval, clearTimeout } = just
+const { sys, setTimeout, setInterval, clearTimeout, http } = just
 const { runMicroTasks, nextTick } = sys
 
 function onComplete () {
@@ -14,13 +14,28 @@ function onStats () {
   const { user, system } = just.cpuUsage()
   const upc = (user - last.user) / 1000000
   const spc = (system - last.system) / 1000000
-  just.print(`mem ${rss} cpu ${upc.toFixed(2)} / ${spc.toFixed(2)}`)
+  just.print(`mem ${rss} cpu ${upc.toFixed(2)} / ${spc.toFixed(2)} rps ${rps}`)
   last.user = user
   last.system = system
+  rps = 0
 }
 
 function onConnect (sock) {
-  sock.onReadable = () => sock.pull(0)
+  sock.onReadable = () => {
+    let bytes = sock.pull(0)
+    let off = 0
+    let nread = http.parseResponse(sock.buf, bytes, off)
+    while (nread > 0) {
+      rps++
+      bytes -= nread
+      off += nread
+      nread = http.parseResponse(sock.buf, bytes, off)
+    }
+    //http.parseResponse(sock.buf, sock.pull(0), 0)
+    //const response = http.getResponse()
+    //just.print(JSON.stringify(response))
+    //just.print(size)
+  }
   sock.onWritable = () => {
     sockets[sock.fd] = sock
   }
@@ -50,6 +65,7 @@ function run () {
   shutdown()
 }
 
+let rps = 0
 let numclients = parseInt(just.args[2] || '1', 10)
 const maxPipeline = parseInt(just.args[3] || '1', 10)
 const duration = parseInt(just.args[4] || '10', 10)
