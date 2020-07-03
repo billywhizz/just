@@ -1,5 +1,4 @@
 #include "just.h"
-#ifndef JUST_MIN
 #include "modules/thread.h"
 #include "modules/signal.h"
 #include "modules/udp.h"
@@ -10,7 +9,6 @@
 #include "modules/inspector.h"
 #include "modules/crypto.h"
 #include "modules/encode.h"
-#endif
 
 namespace just {
 
@@ -20,7 +18,6 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   // c++ runtime
   // initialize the default modules
   just::InitModules(isolate, just);
-#ifndef JUST_MIN
   // required by inspector
   http::Init(isolate, just);
   inspector::Init(isolate, just);
@@ -41,7 +38,6 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   just_builtins_add("fs", lib_fs_js, lib_fs_js_len);
   just_builtins_add("wasm", lib_wasm_js, lib_wasm_js_len);
   just_builtins_add("libwabt", lib_libwabt_js, lib_libwabt_js_len);
-#endif
   // main script js
   just_builtins_add("just", just_js, just_js_len);
   // required by main

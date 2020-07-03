@@ -9,7 +9,7 @@ function onConnect (sock) {
       const url = parser.url(i)
       let response = r404
       if (url === '/json') {
-        const json = JSON.stringify({ message: 'Hello, World!' })
+        const json = JSON.stringify(message)
         response = `HTTP/1.1 200 OK\r\nServer: V\r\nDate: ${time}\r\nContent-Type: application/json\r\nContent-Length: ${json.length}\r\n\r\n${json}`
       } else if (url === '/plaintext') {
         const text = 'Hello, World!'
@@ -38,6 +38,7 @@ const BUFSIZE = 65536
 let qps = 0
 const out = new ArrayBuffer(BUFSIZE)
 const server = createServer()
+const message = { message: 'Hello, World!' }
 
 server.onConnect = onConnect
 server.listen()

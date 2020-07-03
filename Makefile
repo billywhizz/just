@@ -43,17 +43,6 @@ runtime: builtins.h deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libcrypto.a dep
 	$(CC) -c -fPIC -DV8_COMPRESS_POINTERS -I. -I ./deps/zlib -I./deps/v8/include -I./deps/picohttpparser -I./deps/openssl-1.1.1d/include -O3 -march=native -mtune=native -Wall -Wextra -flto -Wno-unused-parameter just.cc
 	$(CC) -s -fPIC -static -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libssl.a deps/openssl-1.1.1d/libcrypto.a deps/zlib/libz.a picohttpparser.o just.o -Wl,--end-group -ldl -o just
 
-minimal: ## build minimal runtime
-	xxd -i just.js > builtins.h
-	xxd -i lib/loop.js >> builtins.h
-	xxd -i lib/require.js >> builtins.h
-	xxd -i lib/path.js >> builtins.h
-	sed -i 's/unsigned char/const char/g' builtins.h
-	sed -i 's/unsigned int/unsigned int/g' builtins.h
-	$(C) -c -fPIC -DV8_COMPRESS_POINTERS -I./deps/picohttpparser -O3 -Wall -Wextra -march=native -mtune=native -msse4 deps/picohttpparser/picohttpparser.c
-	$(CC) -c -fPIC -DJUST_MIN -DV8_COMPRESS_POINTERS -I. -I./deps/v8/include -I./deps/picohttpparser -O3 -march=native -mtune=native -Wall -Wextra -flto -Wno-unused-parameter just.cc
-	$(CC) -s -fPIC -static -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a picohttpparser.o just.o -Wl,--end-group -ldl -o just
-
 runtime-debug: builtins.h deps/openssl-1.1.1d/libcrypto.a deps/openssl-1.1.1d/libssl.a ## build runtime
 	$(C) -c -DV8_COMPRESS_POINTERS -I./deps/picohttpparser -g -Wall -Wextra -march=native -mtune=native -msse4 deps/picohttpparser/picohttpparser.c
 	$(CC) -c -DV8_COMPRESS_POINTERS -I. -I ./deps/zlib -I./deps/v8/include -I./deps/picohttpparser -I./deps/openssl-1.1.1d/include -g -march=native -mtune=native -Wall -Wextra -flto -Wno-unused-parameter just.cc
