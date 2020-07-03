@@ -4,9 +4,9 @@ C              = clang
 .PHONY: help clean
 
 help:
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_\.-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-builtins.h: ## compile builtin js
+builtins.h: lib/*.js ## compile builtins js
 	xxd -i just.js > builtins.h
 	xxd -i lib/websocket.js >> builtins.h
 	xxd -i lib/inspector.js >> builtins.h
@@ -20,9 +20,16 @@ builtins.h: ## compile builtin js
 	sed -i 's/unsigned char/const char/g' builtins.h
 	sed -i 's/unsigned int/unsigned int/g' builtins.h
 
+v8lib: ## build v8 library
+	docker build -t v8-build -f tools/debian/Dockerfile tools/debian/
+	docker run -dt --rm --name v8-build v8-build /bin/sh
+	docker cp v8-build:/build/v8/out.gn/x64.release/obj/libv8_monolith.a deps/v8/libv8_monolith.a
+	docker cp v8-build:/build/v8/src deps/v8/src
+	docker cp v8-build:/build/v8/out.gn/x64.release/gen deps/v8/gen
+	docker kill v8-build
+
 zlib: ## zlib library
 	cd deps/zlib &&	./configure --static && cd ../../
-	make -C deps/zlib/ clean
 	make -C deps/zlib/ static
 
 openssl: ## openssl library
@@ -30,7 +37,7 @@ openssl: ## openssl library
 	make -C deps/openssl-1.1.1d/ build_generated
 	make -C deps/openssl-1.1.1d/ libssl.a libcrypto.a
 
-runtime: builtins.h deps/openssl-1.1.1d/libcrypto.a deps/openssl-1.1.1d/libssl.a ## build runtime
+runtime: builtins.h deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libcrypto.a deps/openssl-1.1.1d/libssl.a ## build runtime
 	$(C) -c -fPIC -DV8_COMPRESS_POINTERS -I./deps/picohttpparser -O3 -Wall -Wextra -march=native -mtune=native -msse4 deps/picohttpparser/picohttpparser.c
 	$(CC) -c -fPIC -DV8_COMPRESS_POINTERS -I. -I ./deps/zlib -I./deps/v8/include -I./deps/picohttpparser -I./deps/openssl-1.1.1d/include -O3 -march=native -mtune=native -Wall -Wextra -flto -Wno-unused-parameter just.cc
 	$(CC) -s -fPIC -static -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libssl.a deps/openssl-1.1.1d/libcrypto.a deps/zlib/libz.a picohttpparser.o just.o -Wl,--end-group -ldl -o just
@@ -60,6 +67,7 @@ clean-all: ## clean deps too
 	rm -f builtins.h
 	rm -f *.o
 	rm -f just
+	make -C deps/zlib/ clean
 	make -C deps/openssl-1.1.1d clean
 	
 .DEFAULT_GOAL := help
