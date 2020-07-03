@@ -1,6 +1,13 @@
 const { parseRequests, getRequests, getUrl } = just.http
 
+const free = []
+
 function createParser (buffer) {
+  if (free.length) {
+    const parser = free.shift()
+    parser.buffer.offset = 0
+    return parser
+  }
   const answer = [0]
   const parser = { buffer }
   function parse (bytes, off = 0) {
@@ -23,6 +30,7 @@ function createParser (buffer) {
   parser.parse = parse
   parser.get = count => getRequests(count)
   parser.url = index => getUrl(index)
+  parser.free = () => free.push(parser)
   return parser
 }
 

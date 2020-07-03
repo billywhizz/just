@@ -5,9 +5,6 @@ function onConnect (sock) {
   const parser = sock.parser = createParser(new ArrayBuffer(BUFSIZE))
   const { buf, size } = responses[200]
   parser.onRequests = count => {
-    for (let i = 0; i < count; i++) {
-      const url = parser.url(i)
-    }
     sock.write(buf, size * count)
   }
   const { buffer } = parser
