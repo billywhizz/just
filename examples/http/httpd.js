@@ -2,15 +2,16 @@ const { createServer } = just.require('./transport.js')
 const { createParser } = just.require('./protocol.js')
 
 function onConnect (sock) {
-  const parser = sock.parser = createParser(new ArrayBuffer(BUFSIZE))
-  const { buf, size } = responses[200]
-  parser.onRequests = count => {
+  const parser = createParser(new ArrayBuffer(BUFSIZE))
+  const { parse } = parser
+  function onRequests (count) {
     sock.write(buf, size * count)
+    qps += count
   }
-  const { buffer } = parser
-  sock.buffer = buffer
-  sock.onData = bytes => parser.parse(bytes)
+  parser.onRequests = onRequests
+  sock.onData = bytes => parse(bytes)
   sock.onClose = () => {}
+  return parser.buffer
 }
 
 const maxPipeline = 256
@@ -22,11 +23,13 @@ const responses = {
     size: r200.length
   }
 }
+const { buf, size } = responses[200]
 const server = createServer()
 server.onConnect = onConnect
 server.listen()
 
 const last = { user: 0, system: 0 }
+let qps = 0
 
 just.setInterval(() => {
   const bw = 1000 * 1000 * 1000
@@ -35,10 +38,10 @@ just.setInterval(() => {
   const upc = ((user - last.user) / 1000000).toFixed(2)
   const spc = ((system - last.system) / 1000000).toFixed(2)
   const { conn, rps, wps } = server.stats
-  just.print(`mem ${rss} conn ${conn} cpu ${upc} / ${spc} Gbps  r ${((rps * 8) / bw).toFixed(2)} w ${((wps * 8) / bw).toFixed(2)}`)
+  just.print(`rps ${qps} mem ${rss} conn ${conn} cpu ${upc} / ${spc} Gbps  r ${((rps * 8) / bw).toFixed(2)} w ${((wps * 8) / bw).toFixed(2)}`)
   last.user = user
   last.system = system
   last.user = user
   last.system = system
-  server.stats.rps = server.stats.wps = 0
+  server.stats.rps = server.stats.wps = qps = 0
 }, 1000)

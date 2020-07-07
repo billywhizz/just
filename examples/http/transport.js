@@ -53,9 +53,8 @@ function createServer (host = '127.0.0.1', port = 3000) {
       }
       return written
     }
-    server.onConnect(socket)
+    const buffer = server.onConnect(socket)
     server.stats.conn++
-    const { buffer } = socket
     buffer.offset = 0
   }
 
@@ -68,7 +67,7 @@ function createServer (host = '127.0.0.1', port = 3000) {
   const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
   net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
   net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
-  net.bind(sockfd, '0.0.0.0', 3000)
+  net.bind(sockfd, host, port)
 
   return server
 }

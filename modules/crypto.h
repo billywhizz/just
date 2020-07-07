@@ -33,6 +33,7 @@ void Hash(const FunctionCallbackInfo<Value> &args) {
   EVP_DigestUpdate(ctx, reinterpret_cast<const unsigned char*>(
       source->Data()), len);
   EVP_DigestFinal(ctx, (unsigned char*)dest->Data(), &outlen);
+  EVP_MD_CTX_free(ctx);
   args.GetReturnValue().Set(Integer::New(isolate, outlen));
 }
 

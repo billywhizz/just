@@ -13,7 +13,7 @@ function onConnect (sock) {
         response = `HTTP/1.1 200 OK\r\nServer: V\r\nDate: ${time}\r\nContent-Type: application/json\r\nContent-Length: ${json.length}\r\n\r\n${json}`
       } else if (url === '/plaintext') {
         const text = 'Hello, World!'
-        response = `HTTP/1.1 200 OK\r\nServer: V\r\nDate: ${time}\r\nContent-Type: text.plain\r\nContent-Length: ${text.length}\r\n\r\n${text}`
+        response = `HTTP/1.1 200 OK\r\nServer: V\r\nDate: ${time}\r\nContent-Type: text/plain\r\nContent-Length: ${text.length}\r\n\r\n${text}`
       }
       if (response.length + off > out.byteLength) {
         sock.write(out, off)
@@ -37,7 +37,7 @@ let r404 = `HTTP/1.1 404 Not FOund\r\nServer: V\r\nDate: ${time}\r\nContent-Type
 const BUFSIZE = 65536
 let qps = 0
 const out = new ArrayBuffer(BUFSIZE)
-const server = createServer()
+const server = createServer('0.0.0.0', 8088)
 const message = { message: 'Hello, World!' }
 
 server.onConnect = onConnect
