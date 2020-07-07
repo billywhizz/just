@@ -21,7 +21,9 @@ builtins.h: lib/*.js ## compile builtins js
 	sed -i 's/unsigned int/unsigned int/g' builtins.h
 
 v8lib: ## build v8 library
-	#docker build -t v8-build -f tools/debian/Dockerfile tools/debian/
+	# build the v8 static library using docker
+	docker build -t v8-build -f tools/debian/Dockerfile tools/debian/
+	# copy the library and relevant source files from docker
 	docker run -dt --rm --name v8-build v8-build /bin/sh
 	docker cp v8-build:/build/v8/out.gn/x64.release/obj/libv8_monolith.a deps/v8/libv8_monolith.a
 	docker cp v8-build:/build/v8/include deps/v8/
