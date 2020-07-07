@@ -14,6 +14,8 @@ struct threadContext {
   unsigned int source_len;
 };
 
+// TODO: implement thread cancellation and cleanup handlers: https://man7.org/linux/man-pages/man3/pthread_cancel.3.html
+
 static InitModulesCallback initModules;
 
 void* startThread(void *data) {
