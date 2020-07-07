@@ -952,9 +952,9 @@ void Timer(const FunctionCallbackInfo<Value> &args) {
   }
   struct itimerspec ts;
   ts.it_interval.tv_sec = t1 / 1000;
-	ts.it_interval.tv_nsec = t1 % 1000;
+	ts.it_interval.tv_nsec = (t1 % 1000) * 1000000;
 	ts.it_value.tv_sec = t2 / 1000;
-	ts.it_value.tv_nsec = t2 % 1000;  
+	ts.it_value.tv_nsec = (t2 % 1000) * 1000000;  
   int r = timerfd_settime(fd, 0, &ts, NULL);
   if (r == -1) {
     args.GetReturnValue().Set(Integer::New(isolate, r));
