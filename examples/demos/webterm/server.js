@@ -6,6 +6,7 @@ const { repl } = just.require('repl')
 const { crypto, encode, sys, net, http } = just
 const { EPOLLIN, EPOLLERR, EPOLLHUP } = just.loop
 const { loop } = just.factory
+const { readFileBytes } = just.require('fs')
 
 const {
   SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_UNIX, AF_INET, SOCK_NONBLOCK, 
@@ -72,28 +73,33 @@ function startWebSocket (request) {
   net.send(fd, wbuf, sys.writeString(wbuf, res.join('\r\n')))
 }
 
-function sendResponse (request, statusCode = 200, statusMessage = 'OK', str = '') {
+function sendResponse (request, statusCode = 200, statusMessage = 'OK', body, hdr = {}) {
   const { fd } = request
   const headers = []
   let len = 0
-  if (str.length) {
-    len = sys.writeString(wbuf, str)
+  if (body) {
+    len = body.byteLength
   }
   headers.push(`HTTP/1.1 ${statusCode} ${statusMessage}`)
   headers.push(`Content-Length: ${len}`)
+  for (const k of Object.keys(hdr)) {
+    headers.push(`${k}: ${hdr[k]}`)
+  }
   headers.push('')
   headers.push('')
   const hstr = headers.join('\r\n')
   const buf = ArrayBuffer.fromString(hstr)
   let bytes = net.send(fd, buf)
-  if (!str.length) return
-  const chunks = Math.ceil(len / 16384)
+  if (!len) return
+  const chunks = Math.ceil(len / 4096)
   let total = 0
-  for (let i = 0, o = 0; i < chunks; ++i, o += 16384) {
-    bytes = net.send(fd, wbuf.slice(o, o + 16384))
+  bytes = 0
+  for (let i = 0, off = 0; i < chunks; ++i, off += 4096) {
+    const towrite = Math.min(len - off, 4096)
+    bytes = net.write(fd, body, towrite, off)
+    if (bytes <= 0) break
     total += bytes
   }
-  just.print(total)
 }
 
 function onSocketEvent (fd, event) {
@@ -110,29 +116,34 @@ function onSocketEvent (fd, event) {
     }
     if (bytes === 0) return closeSocket(fd)
     if (websockets[fd]) return websockets[fd].onData(0, bytes)
-    const nread = http.parseRequest(rbuf, bytes, 0)
-    if (nread < 0) {
-      just.print('omg')
-      return closeSocket(fd)
+    const answer = [0]
+    const count = http.parseRequests(rbuf, rbuf.offset + bytes, 0, answer)
+    if (count > 0) {
+      const requests = http.getRequests(count)
+      for (const request of requests) {
+        request.fd = fd
+        if (request.method !== 'GET') {
+          return sendResponse(request, 403, 'Forbidden')
+        }
+        if (request.headers.Upgrade && request.headers.Upgrade.toLowerCase() === 'websocket') {
+          return startWebSocket(request)
+        }
+        if (request.url === '/' || request.url === '/index.html') {
+          return sendResponse(request, 200, 'OK', readFileBytes('index.html.gz'), { 'Content-Encoding': 'gzip' })
+        }
+        sendResponse(request, 404, 'Not Found')
+      }
     }
-    const request = http.getRequest()
-    request.fd = fd
-    if (request.method !== 'GET') {
-      return sendResponse(request, 403, 'Forbidden')
+    if (answer[0] > 0) {
+      const start = rbuf.offset + bytes - answer[0]
+      const len = answer[0]
+      if (start > rbuf.offset) {
+        rbuf.copyFrom(rbuf, 0, len, start)
+      }
+      rbuf.offset = len
+      return
     }
-    if (request.headers.Upgrade && request.headers.Upgrade.toLowerCase() === 'websocket') {
-      return startWebSocket(request)
-    }
-    if (request.url === '/' || request.url === '/index.html') {
-      return sendResponse(request, 200, 'OK', just.fs.readFile('index.html'))
-    }
-    if (request.url === '/foo.html') {
-      return sendResponse(request, 200, 'OK', just.fs.readFile('foo.html'))
-    }
-    if (request.url === '/term.js') {
-      return sendResponse(request, 200, 'OK', just.fs.readFile('term.js'))
-    }
-    sendResponse(request, 404, 'Not Found')
+    rbuf.offset = 0
   }
 }
 
@@ -145,11 +156,10 @@ function onListenEvent (fd, event) {
   const clientfd = net.accept(fd)
   net.setsockopt(clientfd, IPPROTO_TCP, TCP_NODELAY, 1)
   net.setsockopt(clientfd, SOL_SOCKET, SO_KEEPALIVE, 1)
-  loop.add(clientfd, onSocketEvent)
   let flags = sys.fcntl(clientfd, sys.F_GETFL, 0)
   flags |= O_NONBLOCK
   sys.fcntl(clientfd, sys.F_SETFL, flags)
-  loop.update(clientfd, EPOLLIN)
+  loop.add(clientfd, onSocketEvent)
 }
 
 function main () {
