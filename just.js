@@ -99,8 +99,12 @@ function clearTimeout (fd, loop = just.factory.loop) {
   just.net.close(fd)
 }
 
+function runScript (script, name) {
+  return just.vm.runScript(`(function() {\n${script}\n})()`, name)
+}
+
 function main () {
-  const { vm, fs, sys, net } = just
+  const { fs, sys, net } = just
   ArrayBuffer.prototype.writeString = function(str, off = 0) { // eslint-disable-line
     return sys.writeString(this, str, off)
   }
@@ -141,7 +145,7 @@ function main () {
   if (just.workerSource) {
     const source = just.workerSource
     delete just.workerSource
-    vm.runScript(source, args[0])
+    runScript(source, args[0])
     factory.run()
     return
   }
@@ -153,7 +157,7 @@ function main () {
     return
   }
   if (args[1] === '-e') {
-    vm.runScript(args[2], 'eval')
+    runScript(args[2], 'eval')
     factory.run()
     return
   }
@@ -165,7 +169,7 @@ function main () {
       chunks.push(buf.readString(bytes))
       bytes = net.read(sys.STDIN_FILENO, buf)
     }
-    vm.runScript(chunks.join(''), 'stdin')
+    runScript(chunks.join(''), 'stdin')
     factory.run()
     return
   }
@@ -177,12 +181,12 @@ function main () {
       title: 'Just!',
       onReady: () => {
         just.path.scriptName = just.path.join(sys.cwd(), args[1])
-        vm.runScript(fs.readFile(args[1]), just.path.scriptName)
+        runScript(fs.readFile(args[1]), just.path.scriptName)
       }
     })
   } else {
     just.path.scriptName = just.path.join(sys.cwd(), args[1])
-    vm.runScript(fs.readFile(args[1]), just.path.scriptName)
+    runScript(fs.readFile(args[1]), just.path.scriptName)
   }
   factory.run()
 }
