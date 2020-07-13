@@ -31,7 +31,7 @@ enum zlib_mode {
 };
 
 void FreeMemory(void* buf, size_t length, void* data) {
-  //fprintf(stderr, "free: %lu\n", length);
+  fprintf(stderr, "free: %lu\n", length);
 }
 
 void Crc32(const FunctionCallbackInfo<Value> &args) {
@@ -41,9 +41,12 @@ void Crc32(const FunctionCallbackInfo<Value> &args) {
   Local<ArrayBuffer> ab = args[0].As<ArrayBuffer>();
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
   unsigned int len = args[1]->Uint32Value(context).ToChecked();
-  unsigned long crc = args[2]->Uint32Value(context).ToChecked();
-  args.GetReturnValue().Set(v8::Uint32::New(isolate, crc32(crc, 
+  bool lossless = true;
+  Local<BigInt> crc64 = args[2]->ToBigInt(context).ToLocalChecked();
+  uint64_t crc = crc64->Uint64Value(&lossless);
+  args.GetReturnValue().Set(BigInt::New(isolate, crc32(crc, 
     (const uint8_t *)backing->Data(), len)));
+ 
 }
 
 void WriteDeflate(const FunctionCallbackInfo<Value> &args) {
