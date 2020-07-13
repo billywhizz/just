@@ -7,7 +7,7 @@ const { crypto, encode, sys, net, http } = just
 const { EPOLLIN, EPOLLERR, EPOLLHUP } = just.loop
 const { loop } = just.factory
 const { readFileBytes } = just.require('fs')
-
+const { join } = just.path
 const {
   SOMAXCONN, O_NONBLOCK, SOCK_STREAM, AF_UNIX, AF_INET, SOCK_NONBLOCK, 
   SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, IPPROTO_TCP, TCP_NODELAY, 
@@ -129,7 +129,13 @@ function onSocketEvent (fd, event) {
           return startWebSocket(request)
         }
         if (request.url === '/' || request.url === '/index.html') {
-          return sendResponse(request, 200, 'OK', readFileBytes('index.html.gz'), { 'Content-Encoding': 'gzip' })
+          return sendResponse(request, 200, 'OK', readFileBytes(join(webPath, 'index.html')), { 'Content-Type': 'text/html' })
+        }
+        if (request.url === '/term.min.css') {
+          return sendResponse(request, 200, 'OK', readFileBytes(join(webPath, 'term.min.css')), { 'Content-Type': 'text/css' })
+        }
+        if (request.url === '/term.min.js') {
+          return sendResponse(request, 200, 'OK', readFileBytes(join(webPath, 'term.min.js')), { 'Content-Type': 'application/json' })
         }
         sendResponse(request, 404, 'Not Found')
       }
@@ -162,11 +168,14 @@ function onListenEvent (fd, event) {
   loop.add(clientfd, onSocketEvent)
 }
 
+let webPath
+
 function main () {
   const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
   net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
   net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
-  net.bind(sockfd, '127.0.0.1', 8888)
+  webPath = './web'
+  net.bind(sockfd, '0.0.0.0', 8888)
   net.listen(sockfd, SOMAXCONN)
   loop.add(sockfd, onListenEvent)
 }

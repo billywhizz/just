@@ -62,6 +62,7 @@ void Spawn(const FunctionCallbackInfo<Value> &args) {
   pthread_t tid;
 	int r = pthread_create(&tid, NULL, startThread, ctx);
   if (r != 0) {
+    // todo: sensible return codes
     args.GetReturnValue().Set(BigInt::New(isolate, r));
     return;
   }
@@ -84,12 +85,20 @@ void Join(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(BigInt::New(isolate, (long)tret));
 }
 
+void Self(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  pthread_t tid = pthread_self();
+  args.GetReturnValue().Set(BigInt::New(isolate, (long)tid));
+}
+
 void Init(Isolate* isolate, Local<ObjectTemplate> target, 
   InitModulesCallback InitModules) {
   Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
   initModules = InitModules;
   SET_METHOD(isolate, module, "spawn", Spawn);
   SET_METHOD(isolate, module, "join", Join);
+  SET_METHOD(isolate, module, "self", Self);
   SET_MODULE(isolate, target, "thread", module);
 }
 

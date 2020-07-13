@@ -104,7 +104,7 @@ inline ssize_t process_memory_usage() {
   int fd = 0;
   int i = 0;
   do {
-    fd = open("/proc/self/stat", O_RDONLY);
+    fd = open("/proc/thread-self/stat", O_RDONLY);
   } while (fd == -1 && errno == EINTR);
   if (fd == -1) return (ssize_t)errno;
   do
@@ -1699,13 +1699,11 @@ void PromiseRejectCallback(PromiseRejectMessage message) {
       NewStringType::kNormal)).ToLocalChecked();
   if (try_catch.HasCaught()) {
     fprintf(stderr, "PromiseRejectCallback: Get\n");
-    //dv8::ReportException(isolate, &try_catch);
     return;
   }
   Local<Function> onUnhandledRejection = Local<Function>::Cast(func);
   if (try_catch.HasCaught()) {
     fprintf(stderr, "PromiseRejectCallback: Cast\n");
-    //dv8::ReportException(isolate, &try_catch);
     return;
   }
   Local<Value> value = message.GetValue();
@@ -1714,7 +1712,6 @@ void PromiseRejectCallback(PromiseRejectMessage message) {
   MaybeLocal<Value> result = onUnhandledRejection->Call(context, globalInstance, 3, argv);
   if (result.IsEmpty() && try_catch.HasCaught()) {
     fprintf(stderr, "PromiseRejectCallback: Call\n");
-    //dv8::ReportException(isolate, &try_catch);
   }
 }
 
@@ -1829,6 +1826,7 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
       just::PrintStackTrace(isolate, try_catch);
       return 1;
     }
+
     MaybeLocal<Value> result = module->Evaluate(context);
 		if (result.IsEmpty()) {
       if (try_catch.HasCaught()) {
