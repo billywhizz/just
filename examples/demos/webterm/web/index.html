@@ -104,17 +104,26 @@ window.onload = function() {
     console.log('onSecure')
   }
 
+  async function recurse (dir) {
+    const entries = await dir.getEntries();
+    for await (const entry of entries) {
+      if (entry.isFile) {
+        const file = await dir.getFile(entry.name)
+        console.log(file.name)
+        console.log(`File: ${file.name}`)
+      } else {
+        const d = await dir.getDirectory(entry.name)
+        console.log(`Directory: ${d.name}`)
+        recurse(d)
+      }
+    }
+  }
   const butDir = document.getElementById('butDirectory')
-  butDir.addEventListener('click', async (e) => {
+  butDir.addEventListener('click', async e => {
     const opts = {type: 'open-directory'};
     const handle = await window.chooseFileSystemEntries(opts);
-    const entries = await handle.getEntries();
-    for await (const entry of entries) {
-      const kind = entry.isFile ? 'File' : 'Directory';
-      console.log(kind, entry.name);
-    }
+    await recurse(handle)
   })
-
 }
 </script>
 <div id="terminalHeader"><h2>just...</h2></div>

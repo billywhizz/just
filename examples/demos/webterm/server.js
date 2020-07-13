@@ -170,14 +170,14 @@ function onListenEvent (fd, event) {
 
 let webPath
 
-function main () {
+function main (args) {
   const sockfd = net.socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)
   net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 1)
   net.setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, 1)
   webPath = './web'
-  net.bind(sockfd, '0.0.0.0', 8888)
+  net.bind(sockfd, '0.0.0.0', parseInt(args[0] || 8888, 10))
   net.listen(sockfd, SOMAXCONN)
   loop.add(sockfd, onListenEvent)
 }
 
-main()
+main(just.args.slice(2))
