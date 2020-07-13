@@ -6,6 +6,17 @@ C              = clang
 help:
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_\.-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+dependencies: ## download dependencies
+	mkdir -p deps
+	cd deps
+	curl -o openssl-1.1.1d.tar.gz https://github.com/openssl/openssl/archive/OpenSSL_1_1_1d.tar.gz
+	tar -zxvf openssl-1.1.1d.tar.gz
+	mkdir picohttpparser
+	curl -i picohttpparser/picohttpparser.h https://raw.githubusercontent.com/h2o/picohttpparser/master/picohttpparser.h
+	curl -i picohttpparser/picohttpparser.c https://raw.githubusercontent.com/h2o/picohttpparser/master/picohttpparser.c
+	curl -o zlib-1.2.11.tar.gz https://github.com/madler/zlib/archive/v1.2.11.tar.gz
+	tar -zxvf zlib-1.2.11.tar.gz	
+
 builtins.h: lib/*.js ## compile builtins js
 	xxd -i just.js > builtins.h
 	xxd -i lib/websocket.js >> builtins.h
@@ -43,12 +54,12 @@ openssl: ## openssl library
 runtime: builtins.h deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libcrypto.a deps/openssl-1.1.1d/libssl.a ## build runtime
 	$(C) -c -fPIC -DV8_COMPRESS_POINTERS -I./deps/picohttpparser -O3 -Wall -Wextra -march=native -mtune=native -msse4 deps/picohttpparser/picohttpparser.c
 	$(CC) -c -fPIC -DV8_COMPRESS_POINTERS -I. -I ./deps/zlib -I./deps/v8/include -I./deps/picohttpparser -I./deps/openssl-1.1.1d/include -O3 -march=native -mtune=native -Wall -Wextra -flto -Wno-unused-parameter just.cc
-	$(CC) -s -fPIC -static -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libssl.a deps/openssl-1.1.1d/libcrypto.a deps/zlib/libz.a picohttpparser.o just.o -Wl,--end-group -ldl -o just
+	$(CC) -s -fPIC -static -flto -pthread -m64 -Wl,--start-group deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libssl.a deps/openssl-1.1.1d/libcrypto.a deps/zlib/libz.a picohttpparser.o just.o -Wl,--end-group -ldl -o just
 
 runtime-debug: builtins.h deps/openssl-1.1.1d/libcrypto.a deps/openssl-1.1.1d/libssl.a ## build runtime
 	$(C) -c -DV8_COMPRESS_POINTERS -I./deps/picohttpparser -g -Wall -Wextra -march=native -mtune=native -msse4 deps/picohttpparser/picohttpparser.c
 	$(CC) -c -DV8_COMPRESS_POINTERS -I. -I ./deps/zlib -I./deps/v8/include -I./deps/picohttpparser -I./deps/openssl-1.1.1d/include -g -march=native -mtune=native -Wall -Wextra -flto -Wno-unused-parameter just.cc
-	$(CC) -flto -pthread -m64 -Wl,--start-group ./deps/v8/libv8_monolith.a  deps/openssl-1.1.1d/libcrypto.a deps/openssl-1.1.1d/libssl.a deps/zlib/libz.a picohttpparser.o just.o -Wl,--end-group -ldl -o just
+	$(CC) -flto -pthread -m64 -Wl,--start-group deps/v8/libv8_monolith.a deps/openssl-1.1.1d/libcrypto.a deps/openssl-1.1.1d/libssl.a deps/zlib/libz.a picohttpparser.o just.o -Wl,--end-group -ldl -o just
 
 clean: ## tidy up
 	rm -f builtins.h

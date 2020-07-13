@@ -3,6 +3,7 @@ builtins.h
 .ccache
 .vscode
 deps/v8/libv8_monolith.a
+thirdparty
 deps/v8/gen
 deps/v8/src
 scratch

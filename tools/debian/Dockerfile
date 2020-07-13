@@ -13,7 +13,6 @@ RUN ./build/install-build-deps.sh --no-syms --no-chromeos-fonts --no-arm --no-na
 RUN ./tools/dev/v8gen.py \
 	x64.release \
 	-- \
-	binutils_path=\"/usr/bin\" \
 	target_os=\"linux\" \
 	target_cpu=\"x64\" \
 	v8_target_cpu=\"x64\" \
@@ -28,15 +27,11 @@ RUN ./tools/dev/v8gen.py \
 	use_sysroot=false \
 	use_gold=false \
 	treat_warnings_as_errors=false \
-	strip_debug_info=true \
 	is_desktop_linux=false \
 	v8_enable_i18n_support=false \
 	symbol_level=0 \
-	v8_use_snapshot=true \
 	v8_static_library=true \
 	v8_monolithic=true \
-	v8_experimental_extra_library_files=[] \
-	v8_extra_library_files=[] \
 	proprietary_codecs=false \
 	toolkit_views=false \
 	use_aura=false \

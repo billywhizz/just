@@ -42,7 +42,7 @@ void Crc32(const FunctionCallbackInfo<Value> &args) {
   std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
   unsigned int len = args[1]->Uint32Value(context).ToChecked();
   unsigned long crc = args[2]->Uint32Value(context).ToChecked();
-  args.GetReturnValue().Set(Integer::New(isolate, crc32(crc, 
+  args.GetReturnValue().Set(v8::Uint32::New(isolate, crc32(crc, 
     (const uint8_t *)backing->Data(), len)));
 }
 

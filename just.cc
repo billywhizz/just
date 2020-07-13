@@ -31,7 +31,7 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   tls::Init(isolate, just);
   // required for repl capability
   just_builtins_add("repl", lib_repl_js, lib_repl_js_len);
-  // required for debugging onlu
+  // required for debugging only
   just_builtins_add("inspector", lib_inspector_js, lib_inspector_js_len);
   just_builtins_add("websocket", lib_websocket_js, lib_websocket_js_len);
   // miscellaneous libs
@@ -64,13 +64,13 @@ int Start(int argc, char** argv) {
   }
   r = pthread_sigmask(SIG_SETMASK, &set, NULL);
   if (r != 0) return r;
-  std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
   r = sigemptyset(&set);
   if (r != 0) return r;
   // unblock signals - i need to find out why we have to do this!
   r = pthread_sigmask(SIG_SETMASK, &set, NULL);
   if (r != 0) return r;
   signal(SIGPIPE, SIG_IGN);
+  std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
   v8::V8::InitializePlatform(platform.get());
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);

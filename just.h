@@ -963,6 +963,13 @@ void Timer(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(Integer::New(isolate, fd));
 }
 
+void AvailablePages(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  long available_pages = sysconf(_SC_AVPHYS_PAGES);
+  args.GetReturnValue().Set(Integer::New(isolate, available_pages));
+}
+
 void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   Local<ObjectTemplate> sys = ObjectTemplate::New(isolate);
   SET_METHOD(isolate, sys, "calloc", Calloc);
@@ -990,6 +997,7 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_METHOD(isolate, sys, "exit", Exit);
   SET_METHOD(isolate, sys, "kill", Kill);
   SET_METHOD(isolate, sys, "usleep", USleep);
+  SET_METHOD(isolate, sys, "pages", AvailablePages);
   SET_METHOD(isolate, sys, "nanosleep", NanoSleep);
   SET_VALUE(isolate, sys, "CLOCK_MONOTONIC", Integer::New(isolate, 
     CLOCK_MONOTONIC));
@@ -1008,6 +1016,15 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
   SET_VALUE(isolate, sys, "SIGTERM", Integer::New(isolate, SIGTERM));
   SET_VALUE(isolate, sys, "SIGHUP", Integer::New(isolate, SIGHUP));
   SET_VALUE(isolate, sys, "SIGUSR1", Integer::New(isolate, SIGUSR1));
+  long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+  long physical_pages = sysconf(_SC_PHYS_PAGES);
+  long page_size = sysconf(_SC_PAGESIZE);
+  SET_VALUE(isolate, sys, "cpus", Integer::New(isolate, 
+    cpus));
+  SET_VALUE(isolate, sys, "physicalPages", Integer::New(isolate, 
+    physical_pages));
+  SET_VALUE(isolate, sys, "pageSize", Integer::New(isolate, 
+    page_size));
   SET_MODULE(isolate, target, "sys", sys);
 }
 
@@ -1694,8 +1711,8 @@ void PromiseRejectCallback(PromiseRejectMessage message) {
   Local<Value> value = message.GetValue();
   if (value.IsEmpty()) value = Undefined(isolate);
   Local<Value> argv[argc] = { promise, value, Integer::New(isolate, event) };
-  onUnhandledRejection->Call(context, globalInstance, 3, argv);
-  if (try_catch.HasCaught()) {
+  MaybeLocal<Value> result = onUnhandledRejection->Call(context, globalInstance, 3, argv);
+  if (result.IsEmpty() && try_catch.HasCaught()) {
     fprintf(stderr, "PromiseRejectCallback: Call\n");
     //dv8::ReportException(isolate, &try_catch);
   }
