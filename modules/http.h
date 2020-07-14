@@ -7,7 +7,7 @@ namespace just {
 namespace http {
 typedef struct httpContext httpContext;
 
-#define MAX_PIPELINE 256
+#define MAX_PIPELINE 1024
 
 struct httpContext {
   int minor_version;

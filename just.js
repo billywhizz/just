@@ -143,6 +143,7 @@ function main () {
   })
   const { args } = just
   if (just.workerSource) {
+    just.path.scriptName = just.path.join(sys.cwd(), args[0] || 'thread')
     const source = just.workerSource
     delete just.workerSource
     runScript(source, args[0])
