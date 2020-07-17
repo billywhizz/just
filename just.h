@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <v8-inspector.h>
 #include <map>
 #include "builtins.h"
 
@@ -40,7 +41,6 @@ using v8::FunctionCallbackInfo;
 using v8::Function;
 using v8::Object;
 using v8::Value;
-using v8::Persistent;
 using v8::MaybeLocal;
 using v8::Module;
 using v8::TryCatch;
@@ -80,6 +80,8 @@ using v8::Promise;
 using v8::PromiseRejectEvent;
 
 typedef void    (*InitModulesCallback) (Isolate*, Local<ObjectTemplate>);
+int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, 
+  const char* js, unsigned int js_len, struct iovec* buf, int fd);
 
 struct builtin {
   unsigned int size;
@@ -1685,6 +1687,873 @@ void Init(Isolate* isolate, Local<ObjectTemplate> target) {
 
 }
 
+namespace encode {
+
+const int8_t unbase64_table[256] =
+  { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, 62, -1, 63,
+    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1,
+    -1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, 63,
+    -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+  };
+
+
+static const int8_t unhex_table[256] =
+  { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1,
+    -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+  };
+
+static inline unsigned unhex(uint8_t x) {
+  return unhex_table[x];
+}
+
+size_t hex_decode(char* buf,
+                         size_t len,
+                         const char* src,
+                         const size_t srcLen) {
+  size_t i;
+  for (i = 0; i < len && i * 2 + 1 < srcLen; ++i) {
+    unsigned a = unhex(src[i * 2 + 0]);
+    unsigned b = unhex(src[i * 2 + 1]);
+    if (!~a || !~b)
+      return i;
+    buf[i] = (a << 4) | b;
+  }
+
+  return i;
+}
+
+static size_t hex_encode(const char* src, size_t slen, char* dst, size_t dlen) {
+  // We know how much we'll write, just make sure that there's space.
+  dlen = slen * 2;
+  for (uint32_t i = 0, k = 0; k < dlen; i += 1, k += 2) {
+    static const char hex[] = "0123456789abcdef";
+    uint8_t val = static_cast<uint8_t>(src[i]);
+    dst[k + 0] = hex[val >> 4];
+    dst[k + 1] = hex[val & 15];
+  }
+
+  return dlen;
+}
+
+inline static int8_t unbase64(uint8_t x) {
+  return unbase64_table[x];
+}
+
+static inline constexpr size_t base64_encoded_size(size_t size) {
+  return ((size + 2 - ((size + 2) % 3)) / 3 * 4);
+}
+
+// Doesn't check for padding at the end.  Can be 1-2 bytes over.
+static inline size_t base64_decoded_size_fast(size_t size) {
+  size_t remainder = size % 4;
+
+  size = (size / 4) * 3;
+  if (remainder) {
+    if (size == 0 && remainder == 1) {
+      // special case: 1-byte input cannot be decoded
+      size = 0;
+    } else {
+      // non-padded input, add 1 or 2 extra bytes
+      size += 1 + (remainder == 3);
+    }
+  }
+
+  return size;
+}
+
+
+size_t base64_decoded_size(const char* src, size_t size) {
+  if (size == 0)
+    return 0;
+
+  if (src[size - 1] == '=')
+    size--;
+  if (size > 0 && src[size - 1] == '=')
+    size--;
+
+  return base64_decoded_size_fast(size);
+}
+
+bool base64_decode_group_slow(char* dst, const size_t dstlen,
+                              const char* src, const size_t srclen,
+                              size_t* const i, size_t* const k) {
+  uint8_t hi;
+  uint8_t lo;
+#define V(expr)                                                               \
+  for (;;) {                                                                  \
+    const uint8_t c = src[*i];                                                \
+    lo = unbase64(c);                                                         \
+    *i += 1;                                                                  \
+    if (lo < 64)                                                              \
+      break;  /* Legal character. */                                          \
+    if (c == '=' || *i >= srclen)                                             \
+      return false;  /* Stop decoding. */                                     \
+  }                                                                           \
+  expr;                                                                       \
+  if (*i >= srclen)                                                           \
+    return false;                                                             \
+  if (*k >= dstlen)                                                           \
+    return false;                                                             \
+  hi = lo;
+  V(/* Nothing. */);
+  V(dst[(*k)++] = ((hi & 0x3F) << 2) | ((lo & 0x30) >> 4));
+  V(dst[(*k)++] = ((hi & 0x0F) << 4) | ((lo & 0x3C) >> 2));
+  V(dst[(*k)++] = ((hi & 0x03) << 6) | ((lo & 0x3F) >> 0));
+#undef V
+  return true;  // Continue decoding.
+}
+
+size_t base64_decode_fast(char* dst, const size_t dstlen,
+                          const char* src, const size_t srclen,
+                          const size_t decoded_size) {
+  const size_t available = dstlen < decoded_size ? dstlen : decoded_size;
+  const size_t max_k = available / 3 * 3;
+  size_t max_i = srclen / 4 * 4;
+  size_t i = 0;
+  size_t k = 0;
+  while (i < max_i && k < max_k) {
+    const uint32_t v =
+        unbase64(src[i + 0]) << 24 |
+        unbase64(src[i + 1]) << 16 |
+        unbase64(src[i + 2]) << 8 |
+        unbase64(src[i + 3]);
+    // If MSB is set, input contains whitespace or is not valid base64.
+    if (v & 0x80808080) {
+      if (!base64_decode_group_slow(dst, dstlen, src, srclen, &i, &k))
+        return k;
+      max_i = i + (srclen - i) / 4 * 4;  // Align max_i again.
+    } else {
+      dst[k + 0] = ((v >> 22) & 0xFC) | ((v >> 20) & 0x03);
+      dst[k + 1] = ((v >> 12) & 0xF0) | ((v >> 10) & 0x0F);
+      dst[k + 2] = ((v >>  2) & 0xC0) | ((v >>  0) & 0x3F);
+      i += 4;
+      k += 3;
+    }
+  }
+  if (i < srclen && k < dstlen) {
+    base64_decode_group_slow(dst, dstlen, src, srclen, &i, &k);
+  }
+  return k;
+}
+
+size_t base64_decode(char* dst, const size_t dstlen,
+                     const char* src, const size_t srclen) {
+  const size_t decoded_size = base64_decoded_size(src, srclen);
+  return base64_decode_fast(dst, dstlen, src, srclen, decoded_size);
+}
+
+static size_t base64_encode(const char* src,
+                            size_t slen,
+                            char* dst,
+                            size_t dlen) {
+  // We know how much we'll write, just make sure that there's space.
+  dlen = base64_encoded_size(slen);
+
+  unsigned a;
+  unsigned b;
+  unsigned c;
+  unsigned i;
+  unsigned k;
+  unsigned n;
+
+  static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                              "abcdefghijklmnopqrstuvwxyz"
+                              "0123456789+/";
+
+  i = 0;
+  k = 0;
+  n = slen / 3 * 3;
+
+  while (i < n) {
+    a = src[i + 0] & 0xff;
+    b = src[i + 1] & 0xff;
+    c = src[i + 2] & 0xff;
+
+    dst[k + 0] = table[a >> 2];
+    dst[k + 1] = table[((a & 3) << 4) | (b >> 4)];
+    dst[k + 2] = table[((b & 0x0f) << 2) | (c >> 6)];
+    dst[k + 3] = table[c & 0x3f];
+
+    i += 3;
+    k += 4;
+  }
+
+  if (n != slen) {
+    switch (slen - n) {
+      case 1:
+        a = src[i + 0] & 0xff;
+        dst[k + 0] = table[a >> 2];
+        dst[k + 1] = table[(a & 3) << 4];
+        dst[k + 2] = '=';
+        dst[k + 3] = '=';
+        break;
+
+      case 2:
+        a = src[i + 0] & 0xff;
+        b = src[i + 1] & 0xff;
+        dst[k + 0] = table[a >> 2];
+        dst[k + 1] = table[((a & 3) << 4) | (b >> 4)];
+        dst[k + 2] = table[(b & 0x0f) << 2];
+        dst[k + 3] = '=';
+        break;
+    }
+  }
+
+  return dlen;
+}
+
+void HexEncode(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> absource = args[0].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> source = absource->GetBackingStore();
+  Local<ArrayBuffer> abdest = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> dest = abdest->GetBackingStore();
+  int len = source->ByteLength();
+  if (args.Length() > 2) {
+    len = args[2]->Uint32Value(context).ToChecked();
+  }
+  size_t bytes = hex_encode((const char*)source->Data(), len, 
+    (char*)dest->Data(), dest->ByteLength());
+  args.GetReturnValue().Set(Integer::New(isolate, bytes));
+}
+
+void Base64Encode(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> absource = args[0].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> source = absource->GetBackingStore();
+  Local<ArrayBuffer> abdest = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> dest = abdest->GetBackingStore();
+  int len = source->ByteLength();
+  if (args.Length() > 2) {
+    len = args[2]->Uint32Value(context).ToChecked();
+  }
+  size_t dlen = base64_encoded_size(len);
+  size_t bytes = base64_encode((const char*)source->Data(), len, 
+    (char*)dest->Data(), dlen);
+  args.GetReturnValue().Set(Integer::New(isolate, bytes));
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, module, "hexEncode", HexEncode);
+  SET_METHOD(isolate, module, "base64Encode", Base64Encode);
+  SET_MODULE(isolate, target, "encode", module);
+}
+
+}
+
+namespace inspector {
+
+using v8_inspector::V8InspectorClient;
+using v8_inspector::V8Inspector;
+using v8_inspector::StringBuffer;
+using v8_inspector::StringView;
+using v8_inspector::V8ContextInfo;
+using v8_inspector::V8InspectorSession;
+using v8_inspector::V8Inspector;
+using v8::Global;
+
+const int kInspectorClientIndex = 33;
+
+class SymbolInfo {
+  public:
+  std::string name;
+  std::string filename;
+  size_t line = 0;
+  size_t dis = 0;
+};
+
+class InspectorFrontend final : public V8Inspector::Channel {
+ public:
+
+  explicit InspectorFrontend(Local<Context> context) {
+    isolate_ = context->GetIsolate();
+    context_.Reset(isolate_, context);
+  }
+
+  ~InspectorFrontend() override = default;
+
+ private:
+
+  void sendResponse(int callId, std::unique_ptr<StringBuffer> message) override {
+    Send(message->string());
+  }
+
+  void sendNotification(std::unique_ptr<StringBuffer> message) override {
+    Send(message->string());
+  }
+
+  void flushProtocolNotifications() override {}
+
+  void Send(const v8_inspector::StringView& string) {
+    v8::Isolate::AllowJavascriptExecutionScope allow_script(isolate_);
+    int length = static_cast<int>(string.length());
+    Local<String> message = (string.is8Bit() ? 
+      v8::String::NewFromOneByte(isolate_, 
+      reinterpret_cast<const uint8_t*>(string.characters8()), 
+      v8::NewStringType::kNormal, length) : 
+      v8::String::NewFromTwoByte(isolate_, 
+      reinterpret_cast<const uint16_t*>(string.characters16()), 
+      v8::NewStringType::kNormal, length)).ToLocalChecked();
+    Local<String> callback_name = v8::String::NewFromUtf8Literal(isolate_, 
+      "receive", v8::NewStringType::kNormal);
+    Local<Context> context = context_.Get(isolate_);
+    Local<Value> callback = context->Global()->Get(context, 
+      callback_name).ToLocalChecked();
+    if (callback->IsFunction()) {
+      v8::TryCatch try_catch(isolate_);
+      Local<Value> args[] = {message};
+      Local<Function>::Cast(callback)->Call(context, Undefined(isolate_), 1, 
+        args).ToLocalChecked();
+    }
+  }
+
+  Isolate* isolate_;
+  Global<Context> context_;
+};
+
+class InspectorClient : public V8InspectorClient {
+ public:
+  InspectorClient(Local<Context> context, bool connect) {
+    if (!connect) return;
+    isolate_ = context->GetIsolate();
+    channel_.reset(new InspectorFrontend(context));
+    inspector_ = V8Inspector::create(isolate_, this);
+    session_ = inspector_->connect(1, channel_.get(), StringView());
+    context->SetAlignedPointerInEmbedderData(kInspectorClientIndex, this);
+    inspector_->contextCreated(V8ContextInfo(context, kContextGroupId, 
+      StringView()));
+
+    Local<Value> function = FunctionTemplate::New(isolate_, 
+      SendInspectorMessage)->GetFunction(context).ToLocalChecked();
+    Local<String> function_name = String::NewFromUtf8Literal(isolate_, 
+      "send", NewStringType::kNormal);
+    context->Global()->Set(context, function_name, function).FromJust();
+    context_.Reset(isolate_, context);
+  }
+
+  void runMessageLoopOnPause(int context_group_id) override {
+    Local<String> callback_name = v8::String::NewFromUtf8Literal(isolate_, 
+      "onRunMessageLoop", v8::NewStringType::kNormal);
+    Local<Context> context = context_.Get(isolate_);
+    Local<Value> callback = context->Global()->Get(context, 
+      callback_name).ToLocalChecked();
+    if (callback->IsFunction()) {
+      v8::TryCatch try_catch(isolate_);
+      Local<Value> args[] = {};
+      Local<Function>::Cast(callback)->Call(context, Undefined(isolate_), 0, 
+        args).ToLocalChecked();
+    }
+  }
+
+  void quitMessageLoopOnPause() override {
+    Local<String> callback_name = v8::String::NewFromUtf8Literal(isolate_, 
+      "onQuitMessageLoop", v8::NewStringType::kNormal);
+    Local<Context> context = context_.Get(isolate_);
+    Local<Value> callback = context->Global()->Get(context, 
+      callback_name).ToLocalChecked();
+    if (callback->IsFunction()) {
+      v8::TryCatch try_catch(isolate_);
+      Local<Value> args[] = {};
+      Local<Function>::Cast(callback)->Call(context, Undefined(isolate_), 0, 
+        args).ToLocalChecked();
+    }
+  }
+
+ private:
+
+  static V8InspectorSession* GetSession(Local<Context> context) {
+    InspectorClient* inspector_client = 
+      static_cast<InspectorClient*>(
+        context->GetAlignedPointerFromEmbedderData(kInspectorClientIndex));
+    return inspector_client->session_.get();
+  }
+
+  Local<Context> ensureDefaultContextInGroup(int group_id) override {
+    return context_.Get(isolate_);
+  }
+
+  static void SendInspectorMessage(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    HandleScope handle_scope(isolate);
+    Local<Context> context = isolate->GetCurrentContext();
+    args.GetReturnValue().Set(Undefined(isolate));
+    Local<String> message = args[0]->ToString(context).ToLocalChecked();
+    V8InspectorSession* session = InspectorClient::GetSession(context);
+    int length = message->Length();
+    std::unique_ptr<uint16_t[]> buffer(new uint16_t[length]);
+    message->Write(isolate, buffer.get(), 0, length);
+    StringView message_view(buffer.get(), length);
+    session->dispatchProtocolMessage(message_view);
+    args.GetReturnValue().Set(True(isolate));
+  }
+
+  static const int kContextGroupId = 1;
+  std::unique_ptr<V8Inspector> inspector_;
+  std::unique_ptr<V8InspectorSession> session_;
+  std::unique_ptr<V8Inspector::Channel> channel_;
+  Global<Context> context_;
+  Isolate* isolate_;
+};
+
+InspectorClient* client;
+
+void Enable(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  client = new InspectorClient(context, true);
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, module, "enable", Enable);
+  SET_MODULE(isolate, target, "inspector", module);
+}
+
+}
+
+namespace sha1 {
+
+static char encoding_table[] = {
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+  'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+  'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+  'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+  'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+  'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+  'w', 'x', 'y', 'z', '0', '1', '2', '3',
+  '4', '5', '6', '7', '8', '9', '+', '/'
+};
+static int mod_table[] = {0, 2, 1};
+
+inline unsigned int rol(const unsigned int value, const unsigned int steps)
+{
+  return ((value << steps) | (value >> (32 - steps)));
+}
+
+inline void clearWBuffert(unsigned int* buffert)
+{
+  int pos = 0;
+  for (pos = 16; --pos >= 0;)
+  {
+    buffert[pos] = 0;
+  }
+}
+
+void innerHash(unsigned int* result, unsigned int* w)
+{
+  unsigned int a = result[0];
+  unsigned int b = result[1];
+  unsigned int c = result[2];
+  unsigned int d = result[3];
+  unsigned int e = result[4];
+  int round = 0;
+#define sha1macro(func,val) \
+{ \
+const unsigned int t = rol(a, 5) + (func) + e + val + w[round]; \
+e = d; \
+d = c; \
+c = rol(b, 30); \
+b = a; \
+a = t; \
+}
+  while (round < 16)
+  {
+    sha1macro((b & c) | (~b & d), 0x5a827999)
+    ++round;
+  }
+  while (round < 20)
+  {
+    w[round] = rol((w[round - 3] ^ w[round - 8] ^ w[round - 14] ^ w[round - 16]), 1);
+    sha1macro((b & c) | (~b & d), 0x5a827999)
+    ++round;
+  }
+  while (round < 40)
+  {
+    w[round] = rol((w[round - 3] ^ w[round - 8] ^ w[round - 14] ^ w[round - 16]), 1);
+    sha1macro(b ^ c ^ d, 0x6ed9eba1)
+    ++round;
+  }
+  while (round < 60)
+  {
+    w[round] = rol((w[round - 3] ^ w[round - 8] ^ w[round - 14] ^ w[round - 16]), 1);
+    sha1macro((b & c) | (b & d) | (c & d), 0x8f1bbcdc)
+    ++round;
+  }
+  while (round < 80)
+  {
+    w[round] = rol((w[round - 3] ^ w[round - 8] ^ w[round - 14] ^ w[round - 16]), 1);
+    sha1macro(b ^ c ^ d, 0xca62c1d6)
+    ++round;
+  }
+#undef sha1macro
+  result[0] += a;
+  result[1] += b;
+  result[2] += c;
+  result[3] += d;
+  result[4] += e;
+}
+
+void shacalc(const char* src, char* hash, int bytelength)
+{
+  unsigned int result[5] = { 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0 };
+  const unsigned char* sarray = (const unsigned char*) src;
+  unsigned int w[80];
+  const int endOfFullBlocks = bytelength - 64;
+  int endCurrentBlock;
+  int currentBlock = 0;
+  while (currentBlock <= endOfFullBlocks)
+  {
+    endCurrentBlock = currentBlock + 64;
+    int roundPos = 0;
+    for (roundPos = 0; currentBlock < endCurrentBlock; currentBlock += 4)
+    {
+      w[roundPos++] = (unsigned int) sarray[currentBlock + 3]
+        | (((unsigned int) sarray[currentBlock + 2]) << 8)
+        | (((unsigned int) sarray[currentBlock + 1]) << 16)
+        | (((unsigned int) sarray[currentBlock]) << 24);
+    }
+    innerHash(result, w);
+  }
+  endCurrentBlock = bytelength - currentBlock;
+  clearWBuffert(w);
+  int lastBlockBytes = 0;
+  for (;lastBlockBytes < endCurrentBlock; ++lastBlockBytes)
+  {
+    w[lastBlockBytes >> 2] |= (unsigned int) sarray[lastBlockBytes + currentBlock] << ((3 - (lastBlockBytes & 3)) << 3);
+  }
+  w[lastBlockBytes >> 2] |= 0x80 << ((3 - (lastBlockBytes & 3)) << 3);
+  if (endCurrentBlock >= 56)
+  {
+    innerHash(result, w);
+    clearWBuffert(w);
+  }
+  w[15] = bytelength << 3;
+  innerHash(result, w);
+  int hashByte = 0;
+  for (hashByte = 20; --hashByte >= 0;)
+  {
+    hash[hashByte] = (result[hashByte >> 2] >> (((3 - hashByte) & 0x3) << 3)) & 0xff;
+  }
+}
+
+void Hash(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> absource = args[0].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> source = absource->GetBackingStore();
+  Local<ArrayBuffer> abdest = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> dest = abdest->GetBackingStore();
+  int len = source->ByteLength();
+  if (args.Length() > 3) {
+    len = args[3]->Uint32Value(context).ToChecked();
+  }
+  shacalc((const char*)source->Data(), (char*)dest->Data(), len);
+  args.GetReturnValue().Set(Integer::New(isolate, 20));
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, module, "hash", Hash);
+  SET_MODULE(isolate, target, "sha1", module);
+}
+
+}
+
+namespace signals {
+
+void SignalFD(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  sigset_t* set = static_cast<sigset_t*>(backing->Data());
+  int flags = SFD_NONBLOCK | SFD_CLOEXEC;
+  if (args.Length() > 1) {
+    flags = args[1]->Int32Value(context).ToChecked();
+  }
+  int fd = signalfd(-1, set, flags);
+  args.GetReturnValue().Set(Integer::New(isolate, fd));
+}
+
+void SigEmptySet(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  sigset_t* set = static_cast<sigset_t*>(backing->Data());
+  int r = sigemptyset(set);
+  args.GetReturnValue().Set(Integer::New(isolate, r));
+}
+
+void SigProcMask(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  sigset_t* set = static_cast<sigset_t*>(backing->Data());
+  int action = SIG_SETMASK;
+  if (args.Length() > 1) {
+    action = args[1]->Int32Value(context).ToChecked();
+  }
+  int direction = 0;
+  if (args.Length() > 2) {
+    direction = args[2]->Int32Value(context).ToChecked();
+  }
+  int r = 0;
+  if (direction == 1) {
+    r = pthread_sigmask(action, NULL, set);
+  } else {
+    r = pthread_sigmask(action, set, NULL);
+  }
+  if (r != 0) {
+    args.GetReturnValue().Set(BigInt::New(isolate, r));
+    return;
+  }
+  args.GetReturnValue().Set(BigInt::New(isolate, r));
+}
+
+void SigAddSet(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<ArrayBuffer> buf = args[0].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> backing = buf->GetBackingStore();
+  sigset_t* set = static_cast<sigset_t*>(backing->Data());
+  int signum = args[1]->Int32Value(context).ToChecked();
+  args.GetReturnValue().Set(BigInt::New(isolate, sigaddset(set, signum)));
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, module, "sigprocmask", SigProcMask);
+  SET_METHOD(isolate, module, "sigemptyset", SigEmptySet);
+  SET_METHOD(isolate, module, "sigaddset", SigAddSet);
+  SET_METHOD(isolate, module, "signalfd", SignalFD);
+  SET_VALUE(isolate, module, "SFD_NONBLOCK", Integer::New(isolate, 
+    SFD_NONBLOCK));
+  SET_VALUE(isolate, module, "SFD_CLOEXEC", Integer::New(isolate, SFD_CLOEXEC));
+  SET_VALUE(isolate, module, "JUST_SIGSAVE", Integer::New(isolate, 1));
+  SET_VALUE(isolate, module, "JUST_SIGLOAD", Integer::New(isolate, 0));
+  SET_VALUE(isolate, module, "SIG_BLOCK", Integer::New(isolate, SIG_BLOCK));
+  SET_VALUE(isolate, module, "SIG_SETMASK", Integer::New(isolate, 
+    SIG_SETMASK));
+  SET_MODULE(isolate, target, "signal", module);
+}
+
+}
+
+namespace thread {
+
+struct threadContext {
+  int argc;
+  char** argv;
+  char* source;
+  struct iovec buf;
+  int fd;
+  unsigned int source_len;
+};
+
+// TODO: implement thread cancellation and cleanup handlers: https://man7.org/linux/man-pages/man3/pthread_cancel.3.html
+
+static InitModulesCallback initModules;
+
+void* startThread(void *data) {
+  threadContext* ctx = (threadContext*)data;
+  just::CreateIsolate(ctx->argc, ctx->argv, initModules, ctx->source, 
+    ctx->source_len, &ctx->buf, ctx->fd);
+  free(ctx->source);
+  free(ctx);
+  return NULL;
+}
+
+void Spawn(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  String::Utf8Value source(isolate, args[0]);
+  Local<Context> context = isolate->GetCurrentContext();
+  threadContext* ctx = (threadContext*)calloc(1, sizeof(threadContext));
+  ctx->argc = 1;
+  ctx->argv = new char*[2];
+  ctx->argv[1] = NULL;
+	ctx->source = (char*)calloc(1, source.length());
+  memcpy(ctx->source, *source, source.length());
+  ctx->source_len = source.length();
+  int argc = args.Length();
+  ctx->buf.iov_len = 0;
+  ctx->fd = 0;
+  if (argc > 1) {
+    Local<SharedArrayBuffer> ab = args[1].As<SharedArrayBuffer>();
+    std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+    ctx->buf.iov_base = backing->Data();
+    ctx->buf.iov_len = backing->ByteLength();
+  }
+  if (argc > 2) {
+    ctx->fd = args[2]->Int32Value(context).ToChecked();
+  }
+  if (argc > 3) {
+    String::Utf8Value name(isolate, args[3]);
+    ctx->argv[0] = (char*)calloc(1, name.length());
+    memcpy(ctx->argv[0], *name, name.length());
+  } else {
+    ctx->argv[0] = (char*)calloc(1, 6);
+    strncpy(ctx->argv[0], "thread", 6);
+  }
+  pthread_t tid;
+	int r = pthread_create(&tid, NULL, startThread, ctx);
+  if (r != 0) {
+    // todo: sensible return codes
+    args.GetReturnValue().Set(BigInt::New(isolate, r));
+    return;
+  }
+  args.GetReturnValue().Set(BigInt::New(isolate, tid));
+}
+
+void Join(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<BigInt> bi = args[0]->ToBigInt(context).ToLocalChecked();
+  bool lossless = true;
+  pthread_t tid = (pthread_t)bi->Uint64Value(&lossless);
+  void* tret;
+  int r = pthread_join(tid, &tret);
+  if (r != 0) {
+    args.GetReturnValue().Set(BigInt::New(isolate, r));
+    return;
+  }
+  args.GetReturnValue().Set(BigInt::New(isolate, (long)tret));
+}
+
+void Self(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  pthread_t tid = pthread_self();
+  args.GetReturnValue().Set(BigInt::New(isolate, (long)tid));
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target, 
+  InitModulesCallback InitModules) {
+  Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
+  initModules = InitModules;
+  SET_METHOD(isolate, module, "spawn", Spawn);
+  SET_METHOD(isolate, module, "join", Join);
+  SET_METHOD(isolate, module, "self", Self);
+  SET_MODULE(isolate, target, "thread", module);
+}
+
+}
+
+namespace udp {
+
+void RecvMsg(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int fd = args[0]->Uint32Value(context).ToChecked();
+  Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  Local<Array> answer = args[2].As<Array>();
+  struct iovec buf;
+  buf.iov_base = backing->Data();
+  buf.iov_len = backing->ByteLength();
+  char ip[INET_ADDRSTRLEN];
+  int iplen = sizeof ip;
+  struct sockaddr_storage peer;
+  struct msghdr h;
+  memset(&h, 0, sizeof(h));
+  memset(&peer, 0, sizeof(peer));
+  h.msg_name = &peer;
+  h.msg_namelen = sizeof(peer);
+  h.msg_iov = &buf;
+  h.msg_iovlen = 1;
+  const sockaddr_in *a4 = reinterpret_cast<const sockaddr_in *>(&peer);
+  int bytes = recvmsg(fd, &h, 0);
+  if (bytes <= 0) {
+    args.GetReturnValue().Set(Integer::New(isolate, bytes));
+    return;
+  }
+  inet_ntop(AF_INET, &a4->sin_addr, ip, iplen);
+  answer->Set(context, 0, String::NewFromUtf8(isolate, ip, 
+    v8::NewStringType::kNormal, strlen(ip)).ToLocalChecked()).Check();
+  answer->Set(context, 1, Integer::New(isolate, ntohs(a4->sin_port))).Check();
+  args.GetReturnValue().Set(Integer::New(isolate, bytes));
+}
+
+void SendMsg(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  HandleScope handleScope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+  int argc = args.Length();
+  int fd = args[0]->Uint32Value(context).ToChecked();
+  Local<ArrayBuffer> ab = args[1].As<ArrayBuffer>();
+  std::shared_ptr<BackingStore> backing = ab->GetBackingStore();
+  String::Utf8Value address(args.GetIsolate(), args[2]);
+  int port = args[3]->Uint32Value(context).ToChecked();
+  size_t len = backing->ByteLength();
+  if (argc > 4) {
+    len = args[4]->Uint32Value(context).ToChecked();
+  }
+  struct iovec buf;
+  buf.iov_base = backing->Data();
+  buf.iov_len = len;
+  struct msghdr h;
+  memset(&h, 0, sizeof h);
+  struct sockaddr_in client_addr;
+  client_addr.sin_family = AF_INET;
+  client_addr.sin_port = htons(port);
+  inet_aton(*address, &client_addr.sin_addr);
+  bzero(&(client_addr.sin_zero), 8);
+  h.msg_name = &client_addr;
+  h.msg_namelen = sizeof(struct sockaddr_in);
+  h.msg_iov = &buf;
+  h.msg_iovlen = 1;
+  args.GetReturnValue().Set(Integer::New(isolate, sendmsg(fd, &h, 0)));
+}
+
+void Init(Isolate* isolate, Local<ObjectTemplate> target) {
+  Local<ObjectTemplate> module = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, module, "sendmsg", SendMsg);
+  SET_METHOD(isolate, module, "recvmsg", RecvMsg);
+  SET_MODULE(isolate, target, "udp", module);
+}
+
+}
+
 void PromiseRejectCallback(PromiseRejectMessage message) {
   Local<Promise> promise = message.GetPromise();
   Isolate* isolate = promise->GetIsolate();
@@ -1723,6 +2592,12 @@ void InitModules(Isolate* isolate, Local<ObjectTemplate> just) {
   net::Init(isolate, just);
   loop::Init(isolate, just);
   versions::Init(isolate, just);
+  inspector::Init(isolate, just);
+  sha1::Init(isolate, just);
+  encode::Init(isolate, just);
+  thread::Init(isolate, just, InitModules);
+  signals::Init(isolate, just);
+  udp::Init(isolate, just);
 }
 
 int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules, 
@@ -1735,129 +2610,127 @@ int CreateIsolate(int argc, char** argv, InitModulesCallback InitModules,
   create_params.array_buffer_allocator = 
     ArrayBuffer::Allocator::NewDefaultAllocator();
   Isolate *isolate = Isolate::New(create_params);
-  {
-    Isolate::Scope isolate_scope(isolate);
-    HandleScope handle_scope(isolate);
-    isolate->SetCaptureStackTraceForUncaughtExceptions(true, 1000, 
-      StackTrace::kDetailed);
+  Isolate::Scope isolate_scope(isolate);
+  HandleScope handle_scope(isolate);
+  isolate->SetCaptureStackTraceForUncaughtExceptions(true, 1000, 
+    StackTrace::kDetailed);
 
-    Local<ObjectTemplate> global = ObjectTemplate::New(isolate);
+  Local<ObjectTemplate> global = ObjectTemplate::New(isolate);
 
-    Local<ObjectTemplate> just = ObjectTemplate::New(isolate);
-    SET_METHOD(isolate, just, "print", just::Print);
-    SET_METHOD(isolate, just, "error", just::Error);
-    SET_VALUE(isolate, just, "START", BigInt::New(isolate, start));
+  Local<ObjectTemplate> just = ObjectTemplate::New(isolate);
+  SET_METHOD(isolate, just, "print", just::Print);
+  SET_METHOD(isolate, just, "error", just::Error);
+  SET_VALUE(isolate, just, "START", BigInt::New(isolate, start));
 
-    InitModules(isolate, just);
+  InitModules(isolate, just);
 
-    global->Set(String::NewFromUtf8Literal(isolate, "just", 
-      NewStringType::kNormal), just);
+  global->Set(String::NewFromUtf8Literal(isolate, "just", 
+    NewStringType::kNormal), just);
 
-    Local<Context> context = Context::New(isolate, NULL, global);
-    Context::Scope context_scope(context);
-    context->AllowCodeGenerationFromStrings(false);
-    isolate->SetPromiseRejectCallback(PromiseRejectCallback);
-    Local<Array> arguments = Array::New(isolate);
-    for (int i = 0; i < argc; i++) {
-      arguments->Set(context, i, String::NewFromUtf8(isolate, argv[i], 
-        NewStringType::kNormal, strlen(argv[i])).ToLocalChecked()).Check();
-    }
-    Local<Object> globalInstance = context->Global();
-    globalInstance->Set(context, String::NewFromUtf8Literal(isolate, 
-      "global", 
-      NewStringType::kNormal), globalInstance).Check();
-    Local<Value> obj = globalInstance->Get(context, 
-      String::NewFromUtf8Literal(
-        isolate, "just", 
-        NewStringType::kNormal)).ToLocalChecked();
-    Local<Object> justInstance = Local<Object>::Cast(obj);
-    if (buf != NULL) {
-      std::unique_ptr<BackingStore> backing =
-          SharedArrayBuffer::NewBackingStore(buf->iov_base, buf->iov_len, 
-          just::sys::FreeMemory, nullptr);
-      Local<SharedArrayBuffer> ab =
-          SharedArrayBuffer::New(isolate, std::move(backing));
-      justInstance->Set(context, String::NewFromUtf8Literal(isolate, 
-        "buffer", NewStringType::kNormal), ab).Check();
-    }
-    if (fd != 0) {
-      justInstance->Set(context, String::NewFromUtf8Literal(isolate, "fd", 
-        NewStringType::kNormal), 
-        Integer::New(isolate, fd)).Check();
-    }
-    justInstance->Set(context, String::NewFromUtf8Literal(isolate, "args", 
-      NewStringType::kNormal), arguments).Check();
-    if (js_len > 0) {
-      justInstance->Set(context, String::NewFromUtf8Literal(isolate, 
-        "workerSource", NewStringType::kNormal), 
-        String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
-        js_len).ToLocalChecked()).Check();
-    }
-    TryCatch try_catch(isolate);
-    ScriptOrigin baseorigin(
-      String::NewFromUtf8Literal(isolate, "just.js", 
-      NewStringType::kNormal), // resource name
-      Integer::New(isolate, 0), // line offset
-      Integer::New(isolate, 0),  // column offset
-      False(isolate), // is shared cross-origin
-      Local<Integer>(),  // script id
-      Local<Value>(), // source map url
-      False(isolate), // is opaque
-      False(isolate), // is wasm
-      True(isolate)  // is module
-    );
-    Local<Module> module;
-    Local<String> base;
-    builtin* main = builtins["just"];
-    if (main == nullptr) {
-      return 1;
-    }
-    base = String::NewFromUtf8(isolate, main->source, NewStringType::kNormal, 
-      main->size).ToLocalChecked();
-    ScriptCompiler::Source basescript(base, baseorigin);
-    if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
-      PrintStackTrace(isolate, try_catch);
-      return 1;
-    }
+  Local<Context> context = Context::New(isolate, NULL, global);
+  Context::Scope context_scope(context);
+  context->AllowCodeGenerationFromStrings(false);
+  isolate->SetPromiseRejectCallback(PromiseRejectCallback);
+  Local<Array> arguments = Array::New(isolate);
+  for (int i = 0; i < argc; i++) {
+    arguments->Set(context, i, String::NewFromUtf8(isolate, argv[i], 
+      NewStringType::kNormal, strlen(argv[i])).ToLocalChecked()).Check();
+  }
+  Local<Object> globalInstance = context->Global();
+  globalInstance->Set(context, String::NewFromUtf8Literal(isolate, 
+    "global", 
+    NewStringType::kNormal), globalInstance).Check();
+  Local<Value> obj = globalInstance->Get(context, 
+    String::NewFromUtf8Literal(
+      isolate, "just", 
+      NewStringType::kNormal)).ToLocalChecked();
+  Local<Object> justInstance = Local<Object>::Cast(obj);
+  if (buf != NULL) {
+    std::unique_ptr<BackingStore> backing =
+        SharedArrayBuffer::NewBackingStore(buf->iov_base, buf->iov_len, 
+        just::sys::FreeMemory, nullptr);
+    Local<SharedArrayBuffer> ab =
+        SharedArrayBuffer::New(isolate, std::move(backing));
+    justInstance->Set(context, String::NewFromUtf8Literal(isolate, 
+      "buffer", NewStringType::kNormal), ab).Check();
+  }
+  if (fd != 0) {
+    justInstance->Set(context, String::NewFromUtf8Literal(isolate, "fd", 
+      NewStringType::kNormal), 
+      Integer::New(isolate, fd)).Check();
+  }
+  justInstance->Set(context, String::NewFromUtf8Literal(isolate, "args", 
+    NewStringType::kNormal), arguments).Check();
+  if (js_len > 0) {
+    justInstance->Set(context, String::NewFromUtf8Literal(isolate, 
+      "workerSource", NewStringType::kNormal), 
+      String::NewFromUtf8(isolate, js, NewStringType::kNormal, 
+      js_len).ToLocalChecked()).Check();
+  }
+  TryCatch try_catch(isolate);
+  ScriptOrigin baseorigin(
+    String::NewFromUtf8Literal(isolate, "just.js", 
+    NewStringType::kNormal), // resource name
+    Integer::New(isolate, 0), // line offset
+    Integer::New(isolate, 0),  // column offset
+    False(isolate), // is shared cross-origin
+    Local<Integer>(),  // script id
+    Local<Value>(), // source map url
+    False(isolate), // is opaque
+    False(isolate), // is wasm
+    True(isolate)  // is module
+  );
+  Local<Module> module;
+  Local<String> base;
+  builtin* main = builtins["just"];
+  if (main == nullptr) {
+    return 1;
+  }
+  base = String::NewFromUtf8(isolate, main->source, NewStringType::kNormal, 
+    main->size).ToLocalChecked();
+  ScriptCompiler::Source basescript(base, baseorigin);
+  if (!ScriptCompiler::CompileModule(isolate, &basescript).ToLocal(&module)) {
+    PrintStackTrace(isolate, try_catch);
+    return 1;
+  }
 
-    Maybe<bool> ok = module->InstantiateModule(context, 
-      just::OnModuleInstantiate);
-    if (!ok.ToChecked()) {
+  Maybe<bool> ok = module->InstantiateModule(context, 
+    just::OnModuleInstantiate);
+  if (!ok.ToChecked()) {
+    just::PrintStackTrace(isolate, try_catch);
+    return 1;
+  }
+
+  MaybeLocal<Value> result = module->Evaluate(context);
+  if (result.IsEmpty()) {
+    if (try_catch.HasCaught()) {
       just::PrintStackTrace(isolate, try_catch);
-      return 1;
+      return 2;
     }
+  }
 
-    MaybeLocal<Value> result = module->Evaluate(context);
-		if (result.IsEmpty()) {
-      if (try_catch.HasCaught()) {
-        just::PrintStackTrace(isolate, try_catch);
-        return 2;
-      }
-    }
-
-    Local<Value> func = globalInstance->Get(context, 
-      String::NewFromUtf8Literal(isolate, "onExit", 
-        NewStringType::kNormal)).ToLocalChecked();
-    if (func->IsFunction()) {
-      Local<Function> onExit = Local<Function>::Cast(func);
-      Local<Value> argv[0] = { };
-      MaybeLocal<Value> result = onExit->Call(context, globalInstance, 0, argv);
-      if (!result.IsEmpty()) {
-        statusCode = result.ToLocalChecked()->Uint32Value(context).ToChecked();
-      }
-      if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
-        just::PrintStackTrace(isolate, try_catch);
-        return 2;
-      }
+  Local<Value> func = globalInstance->Get(context, 
+    String::NewFromUtf8Literal(isolate, "onExit", 
+      NewStringType::kNormal)).ToLocalChecked();
+  if (func->IsFunction()) {
+    Local<Function> onExit = Local<Function>::Cast(func);
+    Local<Value> argv[0] = { };
+    MaybeLocal<Value> result = onExit->Call(context, globalInstance, 0, argv);
+    if (!result.IsEmpty()) {
       statusCode = result.ToLocalChecked()->Uint32Value(context).ToChecked();
     }
-    isolate->ContextDisposedNotification();
-    isolate->LowMemoryNotification();
-    isolate->ClearKeptObjects();
-    bool stop = false;
-    while(!stop) {
-      stop = isolate->IdleNotificationDeadline(1);  
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      just::PrintStackTrace(isolate, try_catch);
+      return 2;
     }
+    statusCode = result.ToLocalChecked()->Uint32Value(context).ToChecked();
+  }
+  isolate->ContextDisposedNotification();
+  isolate->LowMemoryNotification();
+  isolate->ClearKeptObjects();
+  bool stop = false;
+  while(!stop) {
+    stop = isolate->IdleNotificationDeadline(1);  
   }
   isolate->Dispose();
   delete create_params.array_buffer_allocator;
